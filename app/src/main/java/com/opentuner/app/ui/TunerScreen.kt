@@ -165,13 +165,40 @@ private fun TunerScreen(
             CentsMeter(state.cents, state.hasSignal, state.inTune)
             StringRow(state, onString)
 
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(Tunings.all) { t ->
-                    FilterChip(
-                        selected = t.id == state.tuning.id,
-                        onClick = { onTuning(t) },
-                        label = { Text(t.title) },
-                    )
+            var selectedInstrument by remember(state.tuning.id) {
+                mutableStateOf(state.tuning.instrument)
+            }
+
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(Tunings.instruments) { inst ->
+                        FilterChip(
+                            selected = inst == selectedInstrument,
+                            onClick = {
+                                selectedInstrument = inst
+                                val tunings = Tunings.forInstrument(inst)
+                                if (tunings.isNotEmpty() && tunings.none { it.id == state.tuning.id }) {
+                                    onTuning(tunings.first())
+                                }
+                            },
+                            label = { Text(inst) },
+                        )
+                    }
+                }
+
+                val currentTunings = remember(selectedInstrument) {
+                    Tunings.forInstrument(selectedInstrument)
+                }
+                if (currentTunings.size > 1) {
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        items(currentTunings) { t ->
+                            FilterChip(
+                                selected = t.id == state.tuning.id,
+                                onClick = { onTuning(t) },
+                                label = { Text(t.name) },
+                            )
+                        }
+                    }
                 }
             }
             Spacer(Modifier.height(4.dp))
@@ -330,16 +357,20 @@ private fun StringRow(s: TunerUiState, onString: (Int) -> Unit) {
         s.lockedString == null -> "Auto-detect · tap a string to lock it and hear it"
         else -> "Locked to ${Note(s.tuning.strings[s.lockedString]).label} · tap again to release"
     }
+    val count = s.tuning.strings.size
+    val spacing = if (count > 6) 4.dp else 6.dp
+    val textStyle = if (count > 6) MaterialTheme.typography.labelSmall else MaterialTheme.typography.labelLarge
+
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         if (!s.tuning.isChromatic) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(spacing)) {
                 s.tuning.strings.forEachIndexed { i, midi ->
                     ToggleButton(
                         checked = s.activeString == i,
                         onCheckedChange = { onString(i) },
                         modifier = Modifier.weight(1f),
                         contentPadding = PaddingValues(0.dp),
-                    ) { Text(Note(midi).name) }
+                    ) { Text(Note(midi).name, maxLines = 1, style = textStyle) }
                 }
             }
         }
