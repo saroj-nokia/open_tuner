@@ -8,7 +8,7 @@ android {
     compileSdk = 37 // Compose 1.12 (pulled in by Material 3 1.5) requires 37
 
     defaultConfig {
-        applicationId = "com.aistudio.opentuner.mvkf"
+        applicationId = "com.opentuner.app"
         minSdk = 26
         targetSdk = 36
         versionCode = 1
