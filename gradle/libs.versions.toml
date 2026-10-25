@@ -1,6 +1,7 @@
 [versions]
-agp = "8.13.0"
-kotlin = "2.2.20"
+# Material 3 1.5.0 pulls Compose 1.12, which needs AGP 9.1+ and compileSdk 37 (AGP 9.4 requires Gradle 9.6).
+agp = "9.4.0"
+kotlin = "2.4.20"
 composeBom = "2025.10.00"
 # Expressive APIs (MaterialShapes, ToggleButton, MotionScheme...) are public from the 1.5.0 line; 1.4.0 keeps them internal.
 material3 = "1.5.0-beta02"
@@ -24,5 +25,5 @@ junit = { group = "junit", name = "junit", version.ref = "junit" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
-kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
+# AGP 9 has Kotlin built in, so there is no org.jetbrains.kotlin.android plugin any more.
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }

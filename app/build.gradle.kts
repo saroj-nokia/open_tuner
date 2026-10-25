@@ -1,14 +1,11 @@
-import org.jetbrains.kotlin.gradle.dsl.JvmTarget
-
 plugins {
     alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
 }
 
 android {
     namespace = "com.opentuner.app"
-    compileSdk = 36 // bump to the Android 17 SDK once you have it installed
+    compileSdk = 37 // Compose 1.12 (pulled in by Material 3 1.5) requires 37
 
     defaultConfig {
         applicationId = "com.opentuner.app"
@@ -33,10 +30,6 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     buildFeatures { compose = true }
-}
-
-kotlin {
-    compilerOptions { jvmTarget.set(JvmTarget.JVM_17) }
 }
 
 dependencies {
