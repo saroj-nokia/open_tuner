@@ -1,28 +1,120 @@
 package com.opentuner.app.audio
 
+import android.content.Context
 import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioTrack
+import java.util.Random
 import kotlin.math.PI
+import kotlin.math.abs
 import kotlin.math.exp
-import kotlin.math.min
 import kotlin.math.sin
 
-/** Plucked-string style reference tone. Harmonics are mixed in so low notes are audible on phone speakers. */
+/**
+ * Pluggable audio source for reference tones.
+ * Allows seamless drop-in of recorded audio samples from res/raw in the future.
+ */
+interface StringAudioSource {
+    fun getAudio(freq: Double, seconds: Double, sampleRate: Int): ShortArray
+}
+
+/**
+ * Karplus-Strong physical modeling plucked-string synthesis.
+ * Simulates a plucked acoustic string with pick comb-filtering,
+ * fractional delay tuning, and natural frequency-dependent decay.
+ */
+class KarplusStrongSynth(
+    private val randomSeed: Long = 1337L,
+) : StringAudioSource {
+
+    override fun getAudio(freq: Double, seconds: Double, sampleRate: Int): ShortArray {
+        val totalSamples = (sampleRate * seconds).toInt()
+        val delay = (sampleRate / freq) - 0.5
+        val delayInt = delay.toInt().coerceAtLeast(2)
+        val frac = (delay - delayInt).coerceIn(0.0, 1.0)
+
+        val bufSize = delayInt + 2
+        val ring = DoubleArray(bufSize)
+
+        // Seed initial pluck excitation with deterministic random noise
+        val rng = Random(randomSeed xor java.lang.Double.doubleToRawLongBits(freq))
+        for (i in 0 until delayInt) {
+            ring[i] = rng.nextDouble() * 2.0 - 1.0
+        }
+
+        // Pick comb filter (simulates pick distance from bridge, approx 1/6th string length)
+        val pickDist = (delayInt / 6).coerceIn(1, delayInt - 1)
+        for (i in delayInt - 1 downTo pickDist) {
+            ring[i] = 0.5 * (ring[i] - ring[i - pickDist])
+        }
+
+        // Decay constant tuned for acoustic resonance
+        val decay = 0.996.coerceAtMost(1.0 - 0.0008 * (freq / 440.0).coerceIn(0.2, 3.0))
+
+        val output = ShortArray(totalSamples)
+        var writeIdx = 0
+        var prevSample = 0.0
+
+        for (n in 0 until totalSamples) {
+            // Read fractional delay from the past
+            val readIdx1 = (writeIdx - delayInt + bufSize) % bufSize
+            val readIdx2 = (writeIdx - delayInt - 1 + bufSize) % bufSize
+            val delayed = (1.0 - frac) * ring[readIdx1] + frac * ring[readIdx2]
+
+            // Two-point lowpass filter (averaging adjacent samples)
+            val filtered = 0.5 * (delayed + prevSample)
+            prevSample = delayed
+
+            val feedback = filtered * decay
+            ring[writeIdx] = feedback
+            writeIdx = (writeIdx + 1) % bufSize
+
+            // Fade out smoothly over last 1000 samples to prevent click
+            val fade = if (n > totalSamples - 1000) (totalSamples - n) / 1000.0 else 1.0
+
+            // Low frequency harmonic enhancement for mobile phone speakers (< 90 Hz)
+            val bassHarmonic = if (freq < 90.0) {
+                0.25 * sin(4.0 * PI * freq * n / sampleRate) * exp(-1.8 * n / sampleRate)
+            } else 0.0
+
+            // Soft saturation to add warm acoustic tone and prevent clipping
+            val s = (feedback + bassHarmonic) * fade
+            val saturated = s / (1.0 + 0.25 * abs(s))
+            output[n] = (saturated.coerceIn(-1.0, 1.0) * Short.MAX_VALUE * 0.85).toInt().toShort()
+        }
+
+        return output
+    }
+}
+
+/**
+ * Future-proof audio source that can load recorded audio files from res/raw,
+ * adjusting playback pitch to match target frequency, falling back to Karplus-Strong.
+ */
+class SampledStringAudioSource(
+    private val context: Context? = null,
+    private val fallback: StringAudioSource = KarplusStrongSynth(),
+) : StringAudioSource {
+    override fun getAudio(freq: Double, seconds: Double, sampleRate: Int): ShortArray {
+        // When real audio samples are dropped into res/raw, they can be unpacked and pitch-adjusted here.
+        // Gracefully defaults to KarplusStrongSynth.
+        return fallback.getAudio(freq, seconds, sampleRate)
+    }
+}
+
+/** Plucked-string audio generator playing through an AudioTrack. */
 object ToneGenerator {
     private const val SAMPLE_RATE = 44100
     private var track: AudioTrack? = null
 
+    /** Active audio source; can be swapped with SampledStringAudioSource or custom provider. */
+    var audioSource: StringAudioSource = KarplusStrongSynth()
+
     @Synchronized
     fun play(freq: Double, seconds: Double = 2.4) {
         stop()
-        val n = (SAMPLE_RATE * seconds).toInt()
-        val data = ShortArray(n) { i ->
-            val t = i.toDouble() / SAMPLE_RATE
-            val envelope = exp(-1.6 * t) * min(1.0, t / 0.01)
-            val s = (sin(2 * PI * freq * t) + 0.6 * sin(4 * PI * freq * t) + 0.35 * sin(6 * PI * freq * t)) / 1.95
-            (s * envelope * 0.7 * Short.MAX_VALUE).toInt().toShort()
-        }
+        val data = audioSource.getAudio(freq, seconds, SAMPLE_RATE)
+        val n = data.size
         val t = AudioTrack.Builder()
             .setAudioAttributes(
                 AudioAttributes.Builder()
