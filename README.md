@@ -21,4 +21,4 @@ Free, ad-free guitar tuner. Kotlin + Jetpack Compose, Material 3 Expressive. Eve
 2. `./gradlew assembleDebug` (or `assembleRelease`, signed with the debug key for convenience).
 3. `./gradlew test` runs the pitch-detector and note-math tests.
 
-`compileSdk`/`targetSdk` are 36; bump to the Android 17 SDK when installed. Compose BOM is 2025.10.00; newer is fine.
+`compileSdk`/`targetSdk` are 36; bump to the Android 17 SDK when installed. Material 3 is pinned to 1.5.0-beta02 because the Expressive APIs are not public in 1.4.0.
