@@ -20,7 +20,8 @@ class YinPitchDetectorTest {
     fun detectsStringsFromBassLowEToHighNotes() {
         val yin = YinPitchDetector(sr)
         for (f in listOf(41.20, 82.41, 110.0, 146.83, 196.0, 246.94, 329.63, 880.0)) {
-            val r = assertNotNull("no pitch for $f Hz", yin.detect(tone(f)))
+            val r = yin.detect(tone(f))
+            assertNotNull("no pitch for $f Hz", r)
             assertEquals(f, r!!.frequency.toDouble(), f * 0.002) // within ~3 cents
         }
     }

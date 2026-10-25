@@ -338,7 +338,6 @@ private fun StringRow(s: TunerUiState, onString: (Int) -> Unit) {
                         checked = s.activeString == i,
                         onCheckedChange = { onString(i) },
                         modifier = Modifier.weight(1f),
-                        shapes = ToggleButtonDefaults.shapes(),
                         contentPadding = PaddingValues(0.dp),
                     ) { Text(Note(midi).name) }
                 }
@@ -378,7 +377,6 @@ private fun SettingsSheet(a4: Float, onA4: (Float) -> Unit, onDismiss: () -> Uni
                     ToggleButton(
                         checked = a4.roundToInt() == hz,
                         onCheckedChange = { onA4(hz.toFloat()) },
-                        shapes = ToggleButtonDefaults.shapes(),
                     ) { Text("$hz") }
                 }
             }

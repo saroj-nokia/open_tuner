@@ -8,20 +8,32 @@ android {
     compileSdk = 37 // Compose 1.12 (pulled in by Material 3 1.5) requires 37
 
     defaultConfig {
-        applicationId = "com.opentuner.app"
+        applicationId = "com.aistudio.opentuner.mvkf"
         minSdk = 26
         targetSdk = 36
         versionCode = 1
         versionName = "1.0"
     }
 
+    signingConfigs {
+        create("debugConfig") {
+            storeFile = file("${rootDir}/debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
+
     buildTypes {
+        debug {
+            signingConfig = signingConfigs.getByName("debugConfig")
+        }
         release {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             // shortcut: debug key so assembleRelease installs straight away; use your own keystore before publishing
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("debugConfig")
         }
     }
 

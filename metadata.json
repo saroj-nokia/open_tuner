@@ -1,0 +1,8 @@
+{
+  "name": "Open Tuner",
+  "description": "A clean, responsive chromatic instrument tuner built with Jetpack Compose.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
