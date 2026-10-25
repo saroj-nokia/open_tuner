@@ -86,4 +86,23 @@ class ToneGeneratorTest {
             ToneGenerator.audioSource = original
         }
     }
+
+    @Test
+    fun inTuneChimeSynthesizesCleanDecayingWaveform() {
+        val chime = ToneGenerator.generateInTuneChime(sampleRate = sampleRate, seconds = 0.22)
+        assertEquals((sampleRate * 0.22).toInt(), chime.size)
+
+        var peakAmp = 0
+        var tailAmp = 0
+        val tailStart = chime.size - 2000
+
+        for ((idx, sample) in chime.withIndex()) {
+            val a = abs(sample.toInt())
+            if (a > peakAmp) peakAmp = a
+            if (idx >= tailStart && a > tailAmp) tailAmp = a
+        }
+
+        assertTrue("Chime must have clear audible peak amplitude", peakAmp > 4000)
+        assertTrue("Chime tail must decay toward silence to prevent clicks", tailAmp < peakAmp / 4)
+    }
 }

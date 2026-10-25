@@ -137,6 +137,63 @@ object ToneGenerator {
         track = t
     }
 
+    /** Generates a crystalline dual-harmonic bell chime for in-tune feedback. */
+    fun generateInTuneChime(
+        sampleRate: Int = SAMPLE_RATE,
+        seconds: Double = 0.22,
+    ): ShortArray {
+        val totalSamples = (sampleRate * seconds).toInt()
+        val data = ShortArray(totalSamples)
+        val f1 = 1046.50 // C6 fundamental bell
+        val f2 = 2093.00 // C7 upper harmonic
+        val f3 = 3135.96 // G7 sparkle
+
+        val attackSamples = (sampleRate * 0.005).toInt().coerceAtLeast(1)
+
+        for (i in 0 until totalSamples) {
+            val t = i.toDouble() / sampleRate
+            val env1 = exp(-14.0 * t)
+            val env2 = exp(-20.0 * t)
+            val env3 = exp(-30.0 * t)
+            val attack = if (i < attackSamples) i.toDouble() / attackSamples else 1.0
+
+            val sample = attack * (
+                0.55 * sin(2.0 * PI * f1 * t) * env1 +
+                0.32 * sin(2.0 * PI * f2 * t) * env2 +
+                0.13 * sin(2.0 * PI * f3 * t) * env3
+            )
+            data[i] = (sample * 0.65 * Short.MAX_VALUE).toInt().toShort()
+        }
+        return data
+    }
+
+    @Synchronized
+    fun playInTuneChime() {
+        stop()
+        val data = generateInTuneChime(SAMPLE_RATE)
+        val n = data.size
+        val t = AudioTrack.Builder()
+            .setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                    .build(),
+            )
+            .setAudioFormat(
+                AudioFormat.Builder()
+                    .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                    .setSampleRate(SAMPLE_RATE)
+                    .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
+                    .build(),
+            )
+            .setBufferSizeInBytes(n * 2)
+            .setTransferMode(AudioTrack.MODE_STATIC)
+            .build()
+        t.write(data, 0, n)
+        t.play()
+        track = t
+    }
+
     @Synchronized
     fun playStrum(
         frequencies: List<Double>,

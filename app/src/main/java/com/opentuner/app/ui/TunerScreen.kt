@@ -110,6 +110,9 @@ import androidx.graphics.shapes.Morph
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
+import com.opentuner.app.music.AudioSignalMath
 import com.opentuner.app.music.StrobeMath
 import com.opentuner.app.music.Note
 import com.opentuner.app.music.Tuning
@@ -213,6 +216,9 @@ fun TunerRoute(
                                 chordVm.setLeftHanded(enabled)
                             },
                             onDisplayMode = vm::setDisplayMode,
+                            onNoiseGateDb = vm::setNoiseGateDb,
+                            onInTuneChime = vm::setInTuneChimeEnabled,
+                            onInTuneHaptic = vm::setInTuneHapticEnabled,
                             onAddCustomTuning = vm::addCustomTuning,
                             onDeleteCustomTuning = vm::deleteCustomTuning,
                             onPreviewPitch = vm::playPreview,
@@ -286,6 +292,9 @@ private fun TunerScreen(
     onA4: (Float) -> Unit,
     onLeftHanded: (Boolean) -> Unit,
     onDisplayMode: (TunerDisplayMode) -> Unit,
+    onNoiseGateDb: (Float) -> Unit,
+    onInTuneChime: (Boolean) -> Unit,
+    onInTuneHaptic: (Boolean) -> Unit,
     onAddCustomTuning: (String, List<Int>) -> Tuning?,
     onDeleteCustomTuning: (String) -> Unit,
     onPreviewPitch: (Int) -> Unit,
@@ -294,8 +303,11 @@ private fun TunerScreen(
     var showCustomSheet by remember { mutableStateOf(false) }
     var tuningToDelete by remember { mutableStateOf<Tuning?>(null) }
     val haptic = LocalHapticFeedback.current
-    LaunchedEffect(state.inTune) {
-        if (state.inTune) haptic.performHapticFeedback(HapticFeedbackType.Confirm)
+
+    LaunchedEffect(state.affirmationTrigger) {
+        if (state.affirmationTrigger > 0L && state.inTuneHapticEnabled) {
+            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+        }
     }
 
     Column(
@@ -317,6 +329,13 @@ private fun TunerScreen(
                     Icon(Icons.Rounded.Settings, contentDescription = "Settings")
                 }
             }
+
+            AudioInputMeter(
+                levelNormalized = state.inputLevelNormalized,
+                db = state.inputLevelDb,
+                aboveGate = state.inputAboveGate,
+                gateDb = state.noiseGateDb,
+            )
 
             NoteHero(state, Modifier.weight(1f).fillMaxWidth())
             Status(state)
@@ -407,9 +426,15 @@ private fun TunerScreen(
             a4 = state.a4,
             leftHanded = state.leftHanded,
             displayMode = state.displayMode,
+            noiseGateDb = state.noiseGateDb,
+            inTuneChimeEnabled = state.inTuneChimeEnabled,
+            inTuneHapticEnabled = state.inTuneHapticEnabled,
             onA4 = onA4,
             onLeftHanded = onLeftHanded,
             onDisplayMode = onDisplayMode,
+            onNoiseGateDb = onNoiseGateDb,
+            onInTuneChime = onInTuneChime,
+            onInTuneHaptic = onInTuneHaptic,
             onDismiss = { showSettings = false },
         )
     }
@@ -503,6 +528,28 @@ private fun NoteHero(s: TunerUiState, modifier: Modifier = Modifier) {
     BoxWithConstraints(modifier, contentAlignment = Alignment.Center) {
         Box(Modifier.size(minOf(maxWidth, maxHeight)), contentAlignment = Alignment.Center) {
             Box(Modifier.fillMaxSize().graphicsLayer { rotationZ = spin }.clip(shape).background(container))
+            if (s.inTuneHoldProgress > 0f) {
+                val isLocked = s.inTuneHoldProgress >= 1f
+                Canvas(
+                    Modifier
+                        .fillMaxSize()
+                        .padding(4.dp)
+                        .testTag("in_tune_lock_indicator"),
+                ) {
+                    val strokeW = 4.dp.toPx()
+                    val diameter = size.minDimension - strokeW
+                    val sweep = s.inTuneHoldProgress * 360f
+                    drawArc(
+                        color = if (isLocked) cs.tertiary else cs.primary,
+                        startAngle = -90f,
+                        sweepAngle = sweep,
+                        useCenter = false,
+                        topLeft = Offset((size.width - diameter) / 2, (size.height - diameter) / 2),
+                        size = Size(diameter, diameter),
+                        style = Stroke(width = strokeW, cap = StrokeCap.Round),
+                    )
+                }
+            }
             val note = s.note
             when {
                 s.toneActive -> Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -537,7 +584,9 @@ private fun NoteHero(s: TunerUiState, modifier: Modifier = Modifier) {
 private fun Status(s: TunerUiState) {
     val text = when {
         s.toneActive -> "Reference tone"
+        !s.hasSignal && !s.inputAboveGate && s.inputLevelDb > -70f -> "Signal below noise gate"
         !s.hasSignal -> "Listening…"
+        s.inTuneHoldProgress >= 1f -> "In tune · Locked ✓"
         s.inTune -> "In tune"
         s.cents < 0 -> "Too low — tune up"
         else -> "Too high — tune down"
@@ -815,6 +864,88 @@ private fun StringRow(s: TunerUiState, onString: (Int) -> Unit) {
     }
 }
 
+// ---- Audio Input Meter -----------------------------------------------------------------------------------------
+
+@Composable
+private fun AudioInputMeter(
+    levelNormalized: Float,
+    db: Float,
+    aboveGate: Boolean,
+    gateDb: Float,
+    modifier: Modifier = Modifier,
+) {
+    val cs = MaterialTheme.colorScheme
+    val animatedLevel by animateFloatAsState(
+        targetValue = levelNormalized,
+        animationSpec = tween(60),
+        label = "vu_level",
+    )
+    val gatePos = remember(gateDb) {
+        AudioSignalMath.normalizeDb(gateDb)
+    }
+
+    Row(
+        modifier = modifier
+            .testTag("audio_input_meter")
+            .fillMaxWidth()
+            .clip(MaterialTheme.shapes.small)
+            .background(cs.surfaceContainerHighest.copy(alpha = 0.6f))
+            .padding(horizontal = 10.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text(
+            "MIC",
+            style = MaterialTheme.typography.labelSmall,
+            color = if (aboveGate) cs.primary else cs.onSurfaceVariant.copy(alpha = 0.6f),
+        )
+
+        Canvas(
+            Modifier
+                .weight(1f)
+                .height(8.dp)
+        ) {
+            val barW = size.width
+            val barH = size.height
+            val radius = CornerRadius(barH / 2, barH / 2)
+
+            // Background track
+            drawRoundRect(
+                color = cs.outlineVariant.copy(alpha = 0.4f),
+                size = Size(barW, barH),
+                cornerRadius = radius,
+            )
+
+            // Active level fill
+            val fillW = (barW * animatedLevel).coerceIn(0f, barW)
+            if (fillW > 0f) {
+                drawRoundRect(
+                    color = if (aboveGate) cs.primary else cs.onSurfaceVariant.copy(alpha = 0.45f),
+                    size = Size(fillW, barH),
+                    cornerRadius = radius,
+                )
+            }
+
+            // Noise gate threshold tick marker
+            val gateX = (barW * gatePos).coerceIn(0f, barW)
+            drawLine(
+                color = if (aboveGate) cs.tertiary else cs.error,
+                start = Offset(gateX, -2.dp.toPx()),
+                end = Offset(gateX, barH + 2.dp.toPx()),
+                strokeWidth = 2.dp.toPx(),
+            )
+        }
+
+        Text(
+            if (db <= -70f) "— dB" else "%.0f dB".format(Locale.US, db),
+            style = MaterialTheme.typography.labelSmall,
+            color = cs.onSurfaceVariant,
+            modifier = Modifier.width(42.dp),
+            textAlign = TextAlign.End,
+        )
+    }
+}
+
 // ---- Settings --------------------------------------------------------------------------------------------------
 
 @Composable
@@ -822,14 +953,24 @@ private fun SettingsSheet(
     a4: Float,
     leftHanded: Boolean,
     displayMode: TunerDisplayMode,
+    noiseGateDb: Float,
+    inTuneChimeEnabled: Boolean,
+    inTuneHapticEnabled: Boolean,
     onA4: (Float) -> Unit,
     onLeftHanded: (Boolean) -> Unit,
     onDisplayMode: (TunerDisplayMode) -> Unit,
+    onNoiseGateDb: (Float) -> Unit,
+    onInTuneChime: (Boolean) -> Unit,
+    onInTuneHaptic: (Boolean) -> Unit,
     onDismiss: () -> Unit,
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
-            Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 32.dp),
+            Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 24.dp)
+                .padding(bottom = 32.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             Text("Settings", style = MaterialTheme.typography.headlineMediumEmphasized)
@@ -854,6 +995,94 @@ private fun SettingsSheet(
                     },
                     modifier = Modifier.testTag("strobe_display_switch"),
                 )
+            }
+
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
+            Row(
+                Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Column(Modifier.weight(1f).padding(end = 16.dp)) {
+                    Text("In-tune audio chime", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        "Plays a crystalline bell ping when the string locks in tune",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Switch(
+                    checked = inTuneChimeEnabled,
+                    onCheckedChange = onInTuneChime,
+                    modifier = Modifier.testTag("in_tune_chime_switch"),
+                )
+            }
+
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
+            Row(
+                Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Column(Modifier.weight(1f).padding(end = 16.dp)) {
+                    Text("In-tune haptic vibration", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        "Vibrates device when pitch is held in-tune",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Switch(
+                    checked = inTuneHapticEnabled,
+                    onCheckedChange = onInTuneHaptic,
+                    modifier = Modifier.testTag("in_tune_haptic_switch"),
+                )
+            }
+
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
+            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Noise gate threshold", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    "Rejects background noise below threshold to prevent false pitch detection",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                ) {
+                    Slider(
+                        value = noiseGateDb,
+                        onValueChange = { onNoiseGateDb(it.roundToInt().toFloat()) },
+                        valueRange = -60f..-24f,
+                        steps = 35,
+                        modifier = Modifier.weight(1f).testTag("noise_gate_slider"),
+                    )
+                    Text(
+                        "%.0f dB".format(Locale.US, noiseGateDb),
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(
+                        selected = noiseGateDb.roundToInt() == AudioSignalMath.GATE_PRESET_QUIET.roundToInt(),
+                        onClick = { onNoiseGateDb(AudioSignalMath.GATE_PRESET_QUIET) },
+                        label = { Text("Quiet Room") },
+                    )
+                    FilterChip(
+                        selected = noiseGateDb.roundToInt() == AudioSignalMath.GATE_PRESET_NORMAL.roundToInt(),
+                        onClick = { onNoiseGateDb(AudioSignalMath.GATE_PRESET_NORMAL) },
+                        label = { Text("Normal") },
+                    )
+                    FilterChip(
+                        selected = noiseGateDb.roundToInt() == AudioSignalMath.GATE_PRESET_REHEARSAL.roundToInt(),
+                        onClick = { onNoiseGateDb(AudioSignalMath.GATE_PRESET_REHEARSAL) },
+                        label = { Text("Rehearsal") },
+                    )
+                }
             }
 
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)

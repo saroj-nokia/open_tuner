@@ -10,8 +10,10 @@ import com.opentuner.app.audio.AudioEngine
 import com.opentuner.app.audio.PitchResult
 import com.opentuner.app.audio.ToneGenerator
 import com.opentuner.app.audio.YinPitchDetector
+import com.opentuner.app.music.AudioSignalMath
 import com.opentuner.app.music.CustomTuningStore
 import com.opentuner.app.music.CustomTuningValidator
+import com.opentuner.app.music.InTuneAffirmationTracker
 import com.opentuner.app.music.Note
 import com.opentuner.app.music.Pitch
 import com.opentuner.app.music.Tuning
@@ -48,6 +50,21 @@ data class TunerUiState(
     val note: Note? = null,
     val cents: Float = 0f,
     val inTune: Boolean = false,
+    val inputLevelNormalized: Float = 0f,
+    val inputLevelDb: Float = -80f,
+    val inputAboveGate: Boolean = false,
+    val noiseGateDb: Float = AudioSignalMath.GATE_PRESET_NORMAL,
+    val inTuneChimeEnabled: Boolean = true,
+    val inTuneHapticEnabled: Boolean = true,
+    val inTuneHoldProgress: Float = 0f,
+    val affirmationTrigger: Long = 0L,
+)
+
+private data class AudioAnalysis(
+    val pitch: PitchResult?,
+    val rms: Float,
+    val db: Float,
+    val aboveGate: Boolean,
 )
 
 class TunerViewModel(app: Application) : AndroidViewModel(app) {
@@ -60,6 +77,10 @@ class TunerViewModel(app: Application) : AndroidViewModel(app) {
     } catch (_: Exception) {
         TunerDisplayMode.NEEDLE
     }
+    private val loadedNoiseGate = prefs.getFloat("noise_gate_db", AudioSignalMath.GATE_PRESET_NORMAL)
+    private val loadedInTuneChime = prefs.getBoolean("in_tune_chime", true)
+    private val loadedInTuneHaptic = prefs.getBoolean("in_tune_haptic", true)
+    private val affirmationTracker = InTuneAffirmationTracker()
 
     private val _state = MutableStateFlow(
         TunerUiState(
@@ -68,6 +89,9 @@ class TunerViewModel(app: Application) : AndroidViewModel(app) {
             leftHanded = prefs.getBoolean("left_handed", false),
             displayMode = loadedDisplayMode,
             customTunings = loadedCustom,
+            noiseGateDb = loadedNoiseGate,
+            inTuneChimeEnabled = loadedInTuneChime,
+            inTuneHapticEnabled = loadedInTuneHaptic,
         ),
     )
     val state = _state.asStateFlow()
@@ -82,9 +106,15 @@ class TunerViewModel(app: Application) : AndroidViewModel(app) {
         if (listenJob?.isActive == true) return
         listenJob = viewModelScope.launch {
             engine.frames()
-                .map { detector.detect(it) }
+                .map { frame ->
+                    val rms = AudioSignalMath.calculateRms(frame)
+                    val db = AudioSignalMath.rmsToDb(rms)
+                    val aboveGate = db >= _state.value.noiseGateDb
+                    val pitch = if (aboveGate) detector.detect(frame) else null
+                    AudioAnalysis(pitch, rms, db, aboveGate)
+                }
                 .flowOn(Dispatchers.Default)
-                .collect { if (!_state.value.toneActive) onPitch(it) }
+                .collect { if (!_state.value.toneActive) onAudioAnalysis(it) }
         }
     }
 
@@ -93,14 +123,49 @@ class TunerViewModel(app: Application) : AndroidViewModel(app) {
         listenJob = null
         toneJob?.cancel()
         ToneGenerator.stop()
-        _state.update { it.copy(hasSignal = false, toneActive = false, inTune = false) }
+        affirmationTracker.reset()
+        _state.update {
+            it.copy(
+                hasSignal = false,
+                toneActive = false,
+                inTune = false,
+                inputLevelNormalized = 0f,
+                inputLevelDb = -80f,
+                inputAboveGate = false,
+                inTuneHoldProgress = 0f,
+            )
+        }
     }
 
-    private fun onPitch(r: PitchResult?) {
+    private fun onAudioAnalysis(analysis: AudioAnalysis) {
         val now = SystemClock.elapsedRealtime()
-        if (r == null || r.confidence < 0.85f) {
+        val normLevel = AudioSignalMath.normalizeDb(analysis.db)
+        val r = analysis.pitch
+
+        if (r == null || r.confidence < 0.85f || !analysis.aboveGate) {
+            val trigger = affirmationTracker.update(null, 0f, hasSignal = false, currentTimeMs = now)
             // Hold the last reading for a moment so the needle doesn't flicker between plucks.
-            if (now - lastSignalAt > 600) _state.update { it.copy(hasSignal = false, inTune = false) }
+            if (now - lastSignalAt > 600) {
+                _state.update {
+                    it.copy(
+                        hasSignal = false,
+                        inTune = false,
+                        inputLevelNormalized = normLevel,
+                        inputLevelDb = analysis.db,
+                        inputAboveGate = analysis.aboveGate,
+                        inTuneHoldProgress = 0f,
+                    )
+                }
+            } else {
+                _state.update {
+                    it.copy(
+                        inputLevelNormalized = normLevel,
+                        inputLevelDb = analysis.db,
+                        inputAboveGate = analysis.aboveGate,
+                        inTuneHoldProgress = trigger.holdProgress,
+                    )
+                }
+            }
             return
         }
         lastSignalAt = now
@@ -117,6 +182,14 @@ class TunerViewModel(app: Application) : AndroidViewModel(app) {
         smoothCents = if (targetMidi != lastTarget) raw else smoothCents + 0.4f * (raw - smoothCents)
         lastTarget = targetMidi
 
+        val trigger = affirmationTracker.update(targetMidi, smoothCents, hasSignal = true, currentTimeMs = now)
+
+        if (trigger.shouldAffirm && s.inTuneChimeEnabled) {
+            viewModelScope.launch(Dispatchers.Default) {
+                ToneGenerator.playInTuneChime()
+            }
+        }
+
         _state.update {
             it.copy(
                 hasSignal = true,
@@ -125,6 +198,11 @@ class TunerViewModel(app: Application) : AndroidViewModel(app) {
                 cents = smoothCents,
                 inTune = abs(smoothCents) <= 5f,
                 activeString = idx,
+                inputLevelNormalized = normLevel,
+                inputLevelDb = analysis.db,
+                inputAboveGate = analysis.aboveGate,
+                inTuneHoldProgress = trigger.holdProgress,
+                affirmationTrigger = if (trigger.shouldAffirm) now else it.affirmationTrigger,
             )
         }
     }
@@ -153,7 +231,8 @@ class TunerViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setTuning(t: Tuning) {
         lastTarget = null
-        _state.update { it.copy(tuning = t, lockedString = null, activeString = null) }
+        affirmationTracker.reset()
+        _state.update { it.copy(tuning = t, lockedString = null, activeString = null, inTuneHoldProgress = 0f) }
         prefs.edit { putString("tuning", t.id) }
     }
 
@@ -170,6 +249,21 @@ class TunerViewModel(app: Application) : AndroidViewModel(app) {
     fun setDisplayMode(mode: TunerDisplayMode) {
         _state.update { it.copy(displayMode = mode) }
         prefs.edit { putString("display_mode", mode.name.lowercase()) }
+    }
+
+    fun setNoiseGateDb(db: Float) {
+        _state.update { it.copy(noiseGateDb = db) }
+        prefs.edit { putFloat("noise_gate_db", db) }
+    }
+
+    fun setInTuneChimeEnabled(enabled: Boolean) {
+        _state.update { it.copy(inTuneChimeEnabled = enabled) }
+        prefs.edit { putBoolean("in_tune_chime", enabled) }
+    }
+
+    fun setInTuneHapticEnabled(enabled: Boolean) {
+        _state.update { it.copy(inTuneHapticEnabled = enabled) }
+        prefs.edit { putBoolean("in_tune_haptic", enabled) }
     }
 
     fun addCustomTuning(name: String, strings: List<Int>): Tuning? {
