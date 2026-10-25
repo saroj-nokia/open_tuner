@@ -32,20 +32,31 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
@@ -53,6 +64,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.ToggleButton
 import androidx.compose.material3.ToggleButtonDefaults
+import androidx.compose.runtime.mutableIntStateOf
+import com.opentuner.app.music.CustomTuningValidator
+import com.opentuner.app.music.Pitch
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -114,7 +128,16 @@ fun TunerRoute(vm: TunerViewModel = viewModel()) {
     }
 
     if (granted) {
-        TunerScreen(state, vm::selectString, vm::setTuning, vm::setA4, vm::setLeftHanded)
+        TunerScreen(
+            state = state,
+            onString = vm::selectString,
+            onTuning = vm::setTuning,
+            onA4 = vm::setA4,
+            onLeftHanded = vm::setLeftHanded,
+            onAddCustomTuning = vm::addCustomTuning,
+            onDeleteCustomTuning = vm::deleteCustomTuning,
+            onPreviewPitch = vm::playPreview,
+        )
     } else {
         PermissionScreen(
             onAllow = { ask.launch(Manifest.permission.RECORD_AUDIO) },
@@ -137,8 +160,13 @@ private fun TunerScreen(
     onTuning: (Tuning) -> Unit,
     onA4: (Float) -> Unit,
     onLeftHanded: (Boolean) -> Unit,
+    onAddCustomTuning: (String, List<Int>) -> Tuning?,
+    onDeleteCustomTuning: (String) -> Unit,
+    onPreviewPitch: (Int) -> Unit,
 ) {
     var showSettings by remember { mutableStateOf(false) }
+    var showCustomSheet by remember { mutableStateOf(false) }
+    var tuningToDelete by remember { mutableStateOf<Tuning?>(null) }
     val haptic = LocalHapticFeedback.current
     LaunchedEffect(state.inTune) {
         if (state.inTune) haptic.performHapticFeedback(HapticFeedbackType.Confirm)
@@ -179,27 +207,63 @@ private fun TunerScreen(
                             selected = inst == selectedInstrument,
                             onClick = {
                                 selectedInstrument = inst
-                                val tunings = Tunings.forInstrument(inst)
-                                if (tunings.isNotEmpty() && tunings.none { it.id == state.tuning.id }) {
-                                    onTuning(tunings.first())
+                                if (inst == "Custom") {
+                                    if (state.customTunings.isNotEmpty() && state.tuning.instrument != "Custom") {
+                                        onTuning(state.customTunings.first())
+                                    }
+                                } else {
+                                    val tunings = Tunings.forInstrument(inst, state.customTunings)
+                                    if (tunings.isNotEmpty() && tunings.none { it.id == state.tuning.id }) {
+                                        onTuning(tunings.first())
+                                    }
                                 }
                             },
+                            leadingIcon = if (inst == "Custom") {
+                                { Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(16.dp)) }
+                            } else null,
                             label = { Text(inst) },
                         )
                     }
                 }
 
-                val currentTunings = remember(selectedInstrument) {
-                    Tunings.forInstrument(selectedInstrument)
-                }
-                if (currentTunings.size > 1) {
+                if (selectedInstrument == "Custom") {
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        items(currentTunings) { t ->
+                        item {
+                            AssistChip(
+                                onClick = { showCustomSheet = true },
+                                leadingIcon = { Icon(Icons.Rounded.Add, contentDescription = "New custom tuning", modifier = Modifier.size(16.dp)) },
+                                label = { Text("New Tuning") },
+                            )
+                        }
+                        items(state.customTunings) { t ->
                             FilterChip(
                                 selected = t.id == state.tuning.id,
                                 onClick = { onTuning(t) },
                                 label = { Text(t.name) },
+                                trailingIcon = {
+                                    IconButton(
+                                        onClick = { tuningToDelete = t },
+                                        modifier = Modifier.size(20.dp),
+                                    ) {
+                                        Icon(Icons.Rounded.Close, contentDescription = "Delete ${t.name}", modifier = Modifier.size(14.dp))
+                                    }
+                                },
                             )
+                        }
+                    }
+                } else {
+                    val currentTunings = remember(selectedInstrument, state.customTunings) {
+                        Tunings.forInstrument(selectedInstrument, state.customTunings)
+                    }
+                    if (currentTunings.size > 1) {
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            items(currentTunings) { t ->
+                                FilterChip(
+                                    selected = t.id == state.tuning.id,
+                                    onClick = { onTuning(t) },
+                                    label = { Text(t.name) },
+                                )
+                            }
                         }
                     }
                 }
@@ -209,6 +273,40 @@ private fun TunerScreen(
     }
 
     if (showSettings) SettingsSheet(state.a4, state.leftHanded, onA4, onLeftHanded) { showSettings = false }
+
+    if (showCustomSheet) {
+        CustomTuningSheet(
+            a4 = state.a4,
+            onPreview = onPreviewPitch,
+            onSave = { name, strings ->
+                onAddCustomTuning(name, strings)
+            },
+            onDismiss = { showCustomSheet = false },
+        )
+    }
+
+    if (tuningToDelete != null) {
+        AlertDialog(
+            onDismissRequest = { tuningToDelete = null },
+            title = { Text("Delete tuning") },
+            text = { Text("Delete \"${tuningToDelete?.name}\"? This cannot be undone.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        tuningToDelete?.id?.let { onDeleteCustomTuning(it) }
+                        tuningToDelete = null
+                    },
+                ) {
+                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { tuningToDelete = null }) {
+                    Text("Cancel")
+                }
+            },
+        )
+    }
 }
 
 // ---- Hero: a Material shape that morphs idle -> listening -> in tune -------------------------------------------
@@ -444,6 +542,146 @@ private fun SettingsSheet(
                         onCheckedChange = { onA4(hz.toFloat()) },
                     ) { Text("$hz") }
                 }
+            }
+        }
+    }
+}
+
+// ---- Custom Tuning Sheet ---------------------------------------------------------------------------------------
+
+@Composable
+private fun CustomTuningSheet(
+    a4: Float,
+    onPreview: (Int) -> Unit,
+    onSave: (String, List<Int>) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var name by remember { mutableStateOf("") }
+    var stringCount by remember { mutableIntStateOf(6) }
+    var strings by remember { mutableStateOf(listOf(40, 45, 50, 55, 59, 64)) }
+
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 24.dp)
+                .padding(bottom = 32.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            Text("New custom tuning", style = MaterialTheme.typography.headlineMediumEmphasized)
+
+            OutlinedTextField(
+                value = name,
+                onValueChange = { name = it },
+                label = { Text("Tuning name") },
+                placeholder = { Text("e.g. Open C, Drop B, Modal D") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+
+            Text("Number of strings", style = MaterialTheme.typography.titleMedium)
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                (4..8).forEach { count ->
+                    FilterChip(
+                        selected = stringCount == count,
+                        onClick = {
+                            if (count > strings.size) {
+                                val added = (strings.size until count).map {
+                                    val last = strings.lastOrNull() ?: 40
+                                    (last + 5).coerceIn(CustomTuningValidator.MIN_MIDI, CustomTuningValidator.MAX_MIDI)
+                                }
+                                strings = strings + added
+                            } else if (count < strings.size) {
+                                strings = strings.take(count)
+                            }
+                            stringCount = count
+                        },
+                        label = { Text("$count") },
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
+
+            Text("Tune strings (lowest to highest)", style = MaterialTheme.typography.titleMedium)
+
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                strings.forEachIndexed { i, midi ->
+                    val note = Note(midi)
+                    val freq = Pitch.freqOf(midi, a4.toDouble())
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    "String ${i + 1}",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Text(note.label, style = MaterialTheme.typography.titleLargeEmphasized)
+                                    Text(
+                                        "%.1f Hz".format(Locale.US, freq),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                            }
+
+                            FilledTonalIconButton(
+                                onClick = {
+                                    val updated = strings.toMutableList()
+                                    updated[i] = (updated[i] - 1).coerceAtLeast(CustomTuningValidator.MIN_MIDI)
+                                    strings = updated
+                                    onPreview(updated[i])
+                                },
+                                enabled = midi > CustomTuningValidator.MIN_MIDI,
+                                shapes = IconButtonDefaults.shapes(),
+                                modifier = Modifier.size(36.dp),
+                            ) {
+                                Text("−", style = MaterialTheme.typography.titleMedium)
+                            }
+
+                            Spacer(Modifier.width(8.dp))
+
+                            FilledTonalIconButton(
+                                onClick = {
+                                    val updated = strings.toMutableList()
+                                    updated[i] = (updated[i] + 1).coerceAtMost(CustomTuningValidator.MAX_MIDI)
+                                    strings = updated
+                                    onPreview(updated[i])
+                                },
+                                enabled = midi < CustomTuningValidator.MAX_MIDI,
+                                shapes = IconButtonDefaults.shapes(),
+                                modifier = Modifier.size(36.dp),
+                            ) {
+                                Text("+", style = MaterialTheme.typography.titleMedium)
+                            }
+                        }
+                    }
+                }
+            }
+
+            val isValid = CustomTuningValidator.validate(name, strings) == null
+            Button(
+                onClick = {
+                    onSave(name, strings)
+                    onDismiss()
+                },
+                enabled = isValid,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("Save custom tuning")
             }
         }
     }

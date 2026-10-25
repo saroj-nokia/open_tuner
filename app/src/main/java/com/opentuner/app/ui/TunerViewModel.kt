@@ -10,6 +10,8 @@ import com.opentuner.app.audio.AudioEngine
 import com.opentuner.app.audio.PitchResult
 import com.opentuner.app.audio.ToneGenerator
 import com.opentuner.app.audio.YinPitchDetector
+import com.opentuner.app.music.CustomTuningStore
+import com.opentuner.app.music.CustomTuningValidator
 import com.opentuner.app.music.Note
 import com.opentuner.app.music.Pitch
 import com.opentuner.app.music.Tuning
@@ -31,6 +33,7 @@ data class TunerUiState(
     val a4: Float,
     val tuning: Tuning,
     val leftHanded: Boolean = false,
+    val customTunings: List<Tuning> = emptyList(),
     val lockedString: Int? = null,
     val activeString: Int? = null,
     val hasSignal: Boolean = false,
@@ -45,12 +48,14 @@ class TunerViewModel(app: Application) : AndroidViewModel(app) {
     private val prefs = app.getSharedPreferences("tuner", Context.MODE_PRIVATE)
     private val engine = AudioEngine()
     private val detector = YinPitchDetector(engine.sampleRate)
+    private val loadedCustom = CustomTuningStore.deserialize(prefs.getString("custom_tunings", null))
 
     private val _state = MutableStateFlow(
         TunerUiState(
             a4 = prefs.getFloat("a4", 440f),
-            tuning = Tunings.byId(prefs.getString("tuning", null)),
+            tuning = Tunings.byId(prefs.getString("tuning", null), loadedCustom),
             leftHanded = prefs.getBoolean("left_handed", false),
+            customTunings = loadedCustom,
         ),
     )
     val state = _state.asStateFlow()
@@ -148,6 +153,39 @@ class TunerViewModel(app: Application) : AndroidViewModel(app) {
     fun setLeftHanded(enabled: Boolean) {
         _state.update { it.copy(leftHanded = enabled) }
         prefs.edit { putBoolean("left_handed", enabled) }
+    }
+
+    fun addCustomTuning(name: String, strings: List<Int>): Tuning? {
+        val error = CustomTuningValidator.validate(name, strings)
+        if (error != null) return null
+        val tuning = Tuning(
+            id = "custom_${System.currentTimeMillis()}",
+            instrument = "Custom",
+            name = name.trim(),
+            strings = strings,
+        )
+        val updated = _state.value.customTunings + tuning
+        _state.update { it.copy(customTunings = updated, tuning = tuning, lockedString = null, activeString = null) }
+        prefs.edit {
+            putString("custom_tunings", CustomTuningStore.serialize(updated))
+            putString("tuning", tuning.id)
+        }
+        return tuning
+    }
+
+    fun deleteCustomTuning(id: String) {
+        val updated = _state.value.customTunings.filterNot { it.id == id }
+        val current = _state.value.tuning
+        val nextTuning = if (current.id == id) Tunings.all[0] else current
+        _state.update { it.copy(customTunings = updated, tuning = nextTuning, lockedString = null, activeString = null) }
+        prefs.edit {
+            putString("custom_tunings", CustomTuningStore.serialize(updated))
+            putString("tuning", nextTuning.id)
+        }
+    }
+
+    fun playPreview(midi: Int) {
+        playTone(Pitch.freqOf(midi, _state.value.a4.toDouble()))
     }
 
     override fun onCleared() {

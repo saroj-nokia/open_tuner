@@ -24,6 +24,7 @@ class NotesTest {
         val expected = listOf(
             "Guitar", "Bass", "Ukulele", "Banjo", "Mandolin",
             "Violin", "Viola", "Cello", "Double Bass", "Chromatic",
+            "Custom",
         )
         assertEquals(expected, Tunings.instruments)
     }
@@ -112,5 +113,52 @@ class NotesTest {
         val highE = stdGuitar.strings[leftHandedIndices.first()]
         assertEquals(40, lowE)
         assertEquals(64, highE)
+    }
+
+    @Test
+    fun customTuningValidationEnforcesConstraints() {
+        // Name validation
+        org.junit.Assert.assertNotNull(CustomTuningValidator.validate("", listOf(40, 45, 50, 55, 59, 64)))
+        org.junit.Assert.assertNotNull(CustomTuningValidator.validate("   ", listOf(40, 45, 50, 55, 59, 64)))
+
+        // String count validation (4..8)
+        org.junit.Assert.assertNotNull(CustomTuningValidator.validate("Tri-String", listOf(40, 45, 50)))
+        org.junit.Assert.assertNotNull(CustomTuningValidator.validate("9-String", listOf(30, 35, 40, 45, 50, 55, 60, 65, 70)))
+        org.junit.Assert.assertNull(CustomTuningValidator.validate("4-String", listOf(40, 45, 50, 55)))
+        org.junit.Assert.assertNull(CustomTuningValidator.validate("8-String", listOf(30, 35, 40, 45, 50, 55, 59, 64)))
+
+        // Pitch range validation (24..88)
+        org.junit.Assert.assertNotNull(CustomTuningValidator.validate("Too Low", listOf(23, 40, 45, 50)))
+        org.junit.Assert.assertNotNull(CustomTuningValidator.validate("Too High", listOf(40, 45, 50, 89)))
+        org.junit.Assert.assertNull(CustomTuningValidator.validate("Valid Range", listOf(24, 40, 50, 88)))
+    }
+
+    @Test
+    fun customTuningStoreRoundtripsCorrectly() {
+        val original = listOf(
+            Tuning(id = "custom_1", instrument = "Custom", name = "Open C", strings = listOf(36, 43, 48, 55, 60, 64)),
+            Tuning(id = "custom_2", instrument = "Custom", name = "Drop B", strings = listOf(35, 42, 47, 52, 56, 61)),
+        )
+        val json = CustomTuningStore.serialize(original)
+        val parsed = CustomTuningStore.deserialize(json)
+
+        assertEquals(2, parsed.size)
+        assertEquals("Open C", parsed[0].name)
+        assertEquals(listOf(36, 43, 48, 55, 60, 64), parsed[0].strings)
+        assertEquals("Drop B", parsed[1].name)
+    }
+
+    @Test
+    fun customTuningsIntegrateWithTuningsHelper() {
+        val custom = listOf(
+            Tuning(id = "c_open", instrument = "Custom", name = "Open C", strings = listOf(36, 43, 48, 55, 60, 64)),
+        )
+        val found = Tunings.byId("c_open", custom)
+        assertEquals("Open C", found.name)
+        assertEquals("Custom", found.instrument)
+
+        val customList = Tunings.forInstrument("Custom", custom)
+        assertEquals(1, customList.size)
+        assertEquals("c_open", customList.first().id)
     }
 }

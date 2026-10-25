@@ -79,17 +79,65 @@ object Tunings {
         "Cello",
         "Double Bass",
         "Chromatic",
+        "Custom",
     )
 
-    fun forInstrument(instrument: String): List<Tuning> = all.filter { it.instrument == instrument }
+    fun forInstrument(instrument: String, custom: List<Tuning> = emptyList()): List<Tuning> =
+        if (instrument == "Custom") custom else all.filter { it.instrument == instrument }
 
-    fun byId(id: String?): Tuning {
+    fun byId(id: String?, custom: List<Tuning> = emptyList()): Tuning {
         val mappedId = when (id) {
             "bass4" -> "bass_std"
             "ukulele" -> "ukulele_std"
             "violin" -> "violin_std"
             else -> id
         }
-        return all.firstOrNull { it.id == mappedId } ?: all[0]
+        return custom.firstOrNull { it.id == mappedId }
+            ?: all.firstOrNull { it.id == mappedId }
+            ?: all[0]
+    }
+}
+
+object CustomTuningValidator {
+    const val MIN_STRINGS = 4
+    const val MAX_STRINGS = 8
+    const val MIN_MIDI = 24
+    const val MAX_MIDI = 88
+
+    fun validate(name: String, strings: List<Int>): String? {
+        if (name.trim().isEmpty()) return "Tuning name cannot be empty"
+        if (strings.size !in MIN_STRINGS..MAX_STRINGS) {
+            return "Tuning must have between $MIN_STRINGS and $MAX_STRINGS strings"
+        }
+        if (strings.any { it !in MIN_MIDI..MAX_MIDI }) {
+            return "Strings must be between MIDI $MIN_MIDI and $MAX_MIDI"
+        }
+        return null
+    }
+}
+
+object CustomTuningStore {
+    fun serialize(tunings: List<Tuning>): String =
+        tunings.joinToString("\n") { t ->
+            val cleanName = t.name.replace("\t", " ").trim()
+            val notesStr = t.strings.joinToString(",")
+            "${t.id}\t$cleanName\t$notesStr"
+        }
+
+    fun deserialize(data: String?): List<Tuning> {
+        if (data.isNullOrBlank()) return emptyList()
+        val list = mutableListOf<Tuning>()
+        data.lineSequence().forEach { line ->
+            val parts = line.split("\t")
+            if (parts.size >= 3) {
+                val id = parts[0]
+                val name = parts[1]
+                val notes = parts[2].split(",").mapNotNull { it.trim().toIntOrNull() }
+                if (CustomTuningValidator.validate(name, notes) == null) {
+                    list.add(Tuning(id = id, instrument = "Custom", name = name, strings = notes))
+                }
+            }
+        }
+        return list
     }
 }
