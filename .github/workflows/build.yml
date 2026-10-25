@@ -14,12 +14,12 @@ jobs:
         with:
           distribution: temurin
           java-version: 17
-      # Accepts SDK licences so AGP can download the API 37 platform it needs.
-      - uses: android-actions/setup-android@v3
-      # Installs Gradle itself, so the project doesn't need a committed wrapper jar. AGP 9.4 needs Gradle 9.6+.
+      # Accepts SDK licences so AGP can download the platform it needs.
+      - uses: android-actions/setup-android@v4
+      # Installs Gradle itself, so the project doesn't need a committed wrapper jar.
       - uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: 9.6.0
+          gradle-version: 9.3.1
       - name: Unit tests and debug APK
         run: gradle test assembleDebug --stacktrace
       - uses: actions/upload-artifact@v4
