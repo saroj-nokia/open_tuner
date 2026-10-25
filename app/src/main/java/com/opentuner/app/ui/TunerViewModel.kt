@@ -30,6 +30,7 @@ import kotlin.math.roundToInt
 data class TunerUiState(
     val a4: Float,
     val tuning: Tuning,
+    val leftHanded: Boolean = false,
     val lockedString: Int? = null,
     val activeString: Int? = null,
     val hasSignal: Boolean = false,
@@ -49,6 +50,7 @@ class TunerViewModel(app: Application) : AndroidViewModel(app) {
         TunerUiState(
             a4 = prefs.getFloat("a4", 440f),
             tuning = Tunings.byId(prefs.getString("tuning", null)),
+            leftHanded = prefs.getBoolean("left_handed", false),
         ),
     )
     val state = _state.asStateFlow()
@@ -141,6 +143,11 @@ class TunerViewModel(app: Application) : AndroidViewModel(app) {
     fun setA4(hz: Float) {
         _state.update { it.copy(a4 = hz) }
         prefs.edit { putFloat("a4", hz) }
+    }
+
+    fun setLeftHanded(enabled: Boolean) {
+        _state.update { it.copy(leftHanded = enabled) }
+        prefs.edit { putBoolean("left_handed", enabled) }
     }
 
     override fun onCleared() {

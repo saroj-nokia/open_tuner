@@ -96,4 +96,21 @@ class NotesTest {
         val bassTunings = Tunings.forInstrument("Bass")
         assertEquals(3, bassTunings.size)
     }
+
+    @Test
+    fun leftHandedStringOrderReversesDisplayIndicesWithoutAlteringStrings() {
+        val stdGuitar = Tunings.byId("guitar_std")
+        val normalIndices = stdGuitar.strings.indices.toList()
+        val leftHandedIndices = stdGuitar.strings.indices.reversed().toList()
+
+        assertEquals(listOf(0, 1, 2, 3, 4, 5), normalIndices)
+        assertEquals(listOf(5, 4, 3, 2, 1, 0), leftHandedIndices)
+
+        // Verifies the underlying pitch to string index resolution is identical
+        // E2 (40) is string 0, E4 (64) is string 5 in both modes
+        val lowE = stdGuitar.strings[leftHandedIndices.last()]
+        val highE = stdGuitar.strings[leftHandedIndices.first()]
+        assertEquals(40, lowE)
+        assertEquals(64, highE)
+    }
 }

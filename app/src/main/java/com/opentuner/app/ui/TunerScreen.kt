@@ -40,6 +40,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialShapes
@@ -47,6 +48,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.ToggleButton
@@ -112,7 +114,7 @@ fun TunerRoute(vm: TunerViewModel = viewModel()) {
     }
 
     if (granted) {
-        TunerScreen(state, vm::selectString, vm::setTuning, vm::setA4)
+        TunerScreen(state, vm::selectString, vm::setTuning, vm::setA4, vm::setLeftHanded)
     } else {
         PermissionScreen(
             onAllow = { ask.launch(Manifest.permission.RECORD_AUDIO) },
@@ -134,6 +136,7 @@ private fun TunerScreen(
     onString: (Int) -> Unit,
     onTuning: (Tuning) -> Unit,
     onA4: (Float) -> Unit,
+    onLeftHanded: (Boolean) -> Unit,
 ) {
     var showSettings by remember { mutableStateOf(false) }
     val haptic = LocalHapticFeedback.current
@@ -205,7 +208,7 @@ private fun TunerScreen(
         }
     }
 
-    if (showSettings) SettingsSheet(state.a4, onA4) { showSettings = false }
+    if (showSettings) SettingsSheet(state.a4, state.leftHanded, onA4, onLeftHanded) { showSettings = false }
 }
 
 // ---- Hero: a Material shape that morphs idle -> listening -> in tune -------------------------------------------
@@ -363,8 +366,10 @@ private fun StringRow(s: TunerUiState, onString: (Int) -> Unit) {
 
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         if (!s.tuning.isChromatic) {
+            val indices = if (s.leftHanded) s.tuning.strings.indices.reversed() else s.tuning.strings.indices
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(spacing)) {
-                s.tuning.strings.forEachIndexed { i, midi ->
+                indices.forEach { i ->
+                    val midi = s.tuning.strings[i]
                     ToggleButton(
                         checked = s.activeString == i,
                         onCheckedChange = { onString(i) },
@@ -386,13 +391,42 @@ private fun StringRow(s: TunerUiState, onString: (Int) -> Unit) {
 // ---- Settings --------------------------------------------------------------------------------------------------
 
 @Composable
-private fun SettingsSheet(a4: Float, onA4: (Float) -> Unit, onDismiss: () -> Unit) {
+private fun SettingsSheet(
+    a4: Float,
+    leftHanded: Boolean,
+    onA4: (Float) -> Unit,
+    onLeftHanded: (Boolean) -> Unit,
+    onDismiss: () -> Unit,
+) {
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
             Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 32.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            Text("Reference pitch", style = MaterialTheme.typography.headlineMediumEmphasized)
+            Text("Settings", style = MaterialTheme.typography.headlineMediumEmphasized)
+
+            Row(
+                Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Column(Modifier.weight(1f).padding(end = 16.dp)) {
+                    Text("Left-handed mode", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        "Reverses string button order for left-handed view",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Switch(
+                    checked = leftHanded,
+                    onCheckedChange = onLeftHanded,
+                )
+            }
+
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
+            Text("Reference pitch", style = MaterialTheme.typography.titleMedium)
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 Slider(
                     value = a4,
