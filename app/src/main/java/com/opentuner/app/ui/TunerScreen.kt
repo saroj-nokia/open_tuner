@@ -37,7 +37,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Build
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
@@ -56,7 +58,10 @@ import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedTextField
+import com.opentuner.app.metronome.MetronomeViewModel
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
@@ -104,10 +109,21 @@ import com.opentuner.app.music.Tunings
 import java.util.Locale
 import kotlin.math.roundToInt
 
+enum class AppScreen {
+    TUNER,
+    METRONOME,
+}
+
 @Composable
-fun TunerRoute(vm: TunerViewModel = viewModel()) {
+fun TunerRoute(
+    vm: TunerViewModel = viewModel(),
+    metronomeVm: MetronomeViewModel = viewModel(),
+) {
     val context = LocalContext.current
+    var currentScreen by remember { mutableStateOf(AppScreen.TUNER) }
     val state by vm.state.collectAsStateWithLifecycle()
+    val metronomeState by metronomeVm.state.collectAsStateWithLifecycle()
+
     var granted by remember {
         mutableStateOf(
             ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
@@ -116,8 +132,8 @@ fun TunerRoute(vm: TunerViewModel = viewModel()) {
     }
     val ask = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted = it }
 
-    LifecycleResumeEffect(granted) {
-        if (granted) vm.startListening()
+    LifecycleResumeEffect(granted, currentScreen) {
+        if (granted && currentScreen == AppScreen.TUNER) vm.startListening()
         onPauseOrDispose { vm.stopListening() }
     }
 
@@ -127,29 +143,81 @@ fun TunerRoute(vm: TunerViewModel = viewModel()) {
         onDispose { view.keepScreenOn = false }
     }
 
-    if (granted) {
-        TunerScreen(
-            state = state,
-            onString = vm::selectString,
-            onTuning = vm::setTuning,
-            onA4 = vm::setA4,
-            onLeftHanded = vm::setLeftHanded,
-            onAddCustomTuning = vm::addCustomTuning,
-            onDeleteCustomTuning = vm::deleteCustomTuning,
-            onPreviewPitch = vm::playPreview,
-        )
-    } else {
-        PermissionScreen(
-            onAllow = { ask.launch(Manifest.permission.RECORD_AUDIO) },
-            onSettings = {
-                context.startActivity(
-                    Intent(
-                        android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-                        Uri.fromParts("package", context.packageName, null),
-                    ),
+    Scaffold(
+        containerColor = MaterialTheme.colorScheme.surface,
+        bottomBar = {
+            NavigationBar {
+                NavigationBarItem(
+                    selected = currentScreen == AppScreen.TUNER,
+                    onClick = {
+                        if (currentScreen != AppScreen.TUNER) {
+                            metronomeVm.stop()
+                            currentScreen = AppScreen.TUNER
+                        }
+                    },
+                    icon = { Icon(Icons.Rounded.Build, contentDescription = "Tuner") },
+                    label = { Text("Tuner") },
                 )
-            },
-        )
+                NavigationBarItem(
+                    selected = currentScreen == AppScreen.METRONOME,
+                    onClick = {
+                        if (currentScreen != AppScreen.METRONOME) {
+                            vm.stopListening()
+                            currentScreen = AppScreen.METRONOME
+                        }
+                    },
+                    icon = { Icon(Icons.Rounded.Refresh, contentDescription = "Metronome") },
+                    label = { Text("Metronome") },
+                )
+            }
+        },
+    ) { padding ->
+        Box(
+            Modifier
+                .fillMaxSize()
+                .padding(padding),
+        ) {
+            when (currentScreen) {
+                AppScreen.TUNER -> {
+                    if (granted) {
+                        TunerScreen(
+                            state = state,
+                            onString = vm::selectString,
+                            onTuning = vm::setTuning,
+                            onA4 = vm::setA4,
+                            onLeftHanded = vm::setLeftHanded,
+                            onAddCustomTuning = vm::addCustomTuning,
+                            onDeleteCustomTuning = vm::deleteCustomTuning,
+                            onPreviewPitch = vm::playPreview,
+                        )
+                    } else {
+                        PermissionScreen(
+                            onAllow = { ask.launch(Manifest.permission.RECORD_AUDIO) },
+                            onSettings = {
+                                context.startActivity(
+                                    Intent(
+                                        android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                                        Uri.fromParts("package", context.packageName, null),
+                                    ),
+                                )
+                            },
+                        )
+                    }
+                }
+                AppScreen.METRONOME -> {
+                    MetronomeScreen(
+                        state = metronomeState,
+                        onTogglePlay = metronomeVm::togglePlay,
+                        onBpmChange = metronomeVm::setBpm,
+                        onIncrementBpm = metronomeVm::incrementBpm,
+                        onTimeSignatureChange = metronomeVm::setTimeSignature,
+                        onAccentChange = metronomeVm::setAccent,
+                        onTapTempo = metronomeVm::tapTempo,
+                        onBack = { currentScreen = AppScreen.TUNER },
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -172,11 +240,12 @@ private fun TunerScreen(
         if (state.inTune) haptic.performHapticFeedback(HapticFeedbackType.Confirm)
     }
 
-    Scaffold(containerColor = MaterialTheme.colorScheme.surface) { pad ->
-        Column(
-            Modifier.fillMaxSize().padding(pad).padding(horizontal = 20.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
+    Column(
+        Modifier
+            .fillMaxSize()
+            .padding(horizontal = 20.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text("Open Tuner", style = MaterialTheme.typography.headlineMediumEmphasized)
@@ -270,7 +339,6 @@ private fun TunerScreen(
             }
             Spacer(Modifier.height(4.dp))
         }
-    }
 
     if (showSettings) SettingsSheet(state.a4, state.leftHanded, onA4, onLeftHanded) { showSettings = false }
 
