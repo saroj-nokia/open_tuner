@@ -76,23 +76,30 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.LayoutDirection
@@ -103,6 +110,7 @@ import androidx.graphics.shapes.Morph
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.opentuner.app.music.StrobeMath
 import com.opentuner.app.music.Note
 import com.opentuner.app.music.Tuning
 import com.opentuner.app.music.Tunings
@@ -204,6 +212,7 @@ fun TunerRoute(
                                 vm.setLeftHanded(enabled)
                                 chordVm.setLeftHanded(enabled)
                             },
+                            onDisplayMode = vm::setDisplayMode,
                             onAddCustomTuning = vm::addCustomTuning,
                             onDeleteCustomTuning = vm::deleteCustomTuning,
                             onPreviewPitch = vm::playPreview,
@@ -276,6 +285,7 @@ private fun TunerScreen(
     onTuning: (Tuning) -> Unit,
     onA4: (Float) -> Unit,
     onLeftHanded: (Boolean) -> Unit,
+    onDisplayMode: (TunerDisplayMode) -> Unit,
     onAddCustomTuning: (String, List<Int>) -> Tuning?,
     onDeleteCustomTuning: (String) -> Unit,
     onPreviewPitch: (Int) -> Unit,
@@ -310,7 +320,11 @@ private fun TunerScreen(
 
             NoteHero(state, Modifier.weight(1f).fillMaxWidth())
             Status(state)
-            CentsMeter(state.cents, state.hasSignal, state.inTune)
+            if (state.displayMode == TunerDisplayMode.STROBE) {
+                StrobeMeter(state.cents, state.hasSignal, state.inTune)
+            } else {
+                CentsMeter(state.cents, state.hasSignal, state.inTune)
+            }
             StringRow(state, onString)
 
             var selectedInstrument by remember(state.tuning.id) {
@@ -388,7 +402,17 @@ private fun TunerScreen(
             Spacer(Modifier.height(4.dp))
         }
 
-    if (showSettings) SettingsSheet(state.a4, state.leftHanded, onA4, onLeftHanded) { showSettings = false }
+    if (showSettings) {
+        SettingsSheet(
+            a4 = state.a4,
+            leftHanded = state.leftHanded,
+            displayMode = state.displayMode,
+            onA4 = onA4,
+            onLeftHanded = onLeftHanded,
+            onDisplayMode = onDisplayMode,
+            onDismiss = { showSettings = false },
+        )
+    }
 
     if (showCustomSheet) {
         CustomTuningSheet(
@@ -528,6 +552,195 @@ private fun Status(s: TunerUiState) {
     }
 }
 
+// ---- Strobe meter ----------------------------------------------------------------------------------------------
+
+@Composable
+private fun StrobeMeter(cents: Float, active: Boolean, inTune: Boolean) {
+    val cs = MaterialTheme.colorScheme
+    val density = LocalDensity.current.density
+    val currentSpeed by rememberUpdatedState(
+        StrobeMath.calculateDriftSpeed(cents = cents, hasSignal = active, inTune = inTune),
+    )
+
+    var phase by remember { mutableFloatStateOf(0f) }
+
+    LaunchedEffect(Unit) {
+        var lastNanos = 0L
+        while (true) {
+            withFrameNanos { frameNanos ->
+                if (lastNanos > 0L) {
+                    val dt = ((frameNanos - lastNanos).coerceIn(0L, 100_000_000L)) / 1_000_000_000f
+                    val speed = currentSpeed
+                    if (speed != 0f) {
+                        phase += speed * dt
+                    }
+                }
+                lastNanos = frameNanos
+            }
+        }
+    }
+
+    val inTuneGlow by animateColorAsState(
+        targetValue = if (active && inTune) cs.tertiary else if (active) cs.primary else cs.outlineVariant,
+        animationSpec = MaterialTheme.motionScheme.defaultEffectsSpec(),
+        label = "strobeGlow",
+    )
+
+    Column(Modifier.testTag("strobe_meter")) {
+        Canvas(Modifier.fillMaxWidth().height(72.dp)) {
+            val totalW = size.width
+            val totalH = size.height
+            val barH = 40.dp.toPx()
+            val top = (totalH - barH) / 2f
+            val cornerRadius = CornerRadius(barH / 2f)
+
+            // Outer bezel
+            drawRoundRect(
+                color = cs.surfaceContainerHighest,
+                topLeft = Offset(0f, top),
+                size = Size(totalW, barH),
+                cornerRadius = cornerRadius,
+            )
+
+            // Clip within the rounded track
+            val path = Path().apply {
+                addRoundRect(
+                    RoundRect(
+                        left = 0f,
+                        top = top,
+                        right = totalW,
+                        bottom = top + barH,
+                        cornerRadius = cornerRadius,
+                    ),
+                )
+            }
+
+            clipPath(path) {
+                val halfBarH = barH / 2f
+                val period1 = 36.dp.toPx()
+                val period2 = 18.dp.toPx()
+
+                val phasePx1 = StrobeMath.wrapPhase(phase * density, period1)
+                val phasePx2 = StrobeMath.wrapPhase(phase * density * 1.5f, period2)
+
+                val barColor = if (!active) {
+                    cs.onSurfaceVariant.copy(alpha = 0.18f)
+                } else if (inTune) {
+                    cs.tertiary.copy(alpha = 0.90f)
+                } else {
+                    cs.primary.copy(alpha = 0.85f)
+                }
+
+                // Top track (Fundamental pitch band)
+                val startX1 = -period1 * 2 + phasePx1
+                var x1 = startX1
+                val blockW1 = period1 / 2f
+                while (x1 < totalW + period1) {
+                    drawRect(
+                        color = barColor,
+                        topLeft = Offset(x1, top),
+                        size = Size(blockW1, halfBarH),
+                    )
+                    x1 += period1
+                }
+
+                // Track divider line
+                drawLine(
+                    color = cs.surfaceContainerLowest.copy(alpha = 0.5f),
+                    start = Offset(0f, top + halfBarH),
+                    end = Offset(totalW, top + halfBarH),
+                    strokeWidth = 1.dp.toPx(),
+                )
+
+                // Bottom track (2nd harmonic octave band)
+                val startX2 = -period2 * 2 + phasePx2
+                var x2 = startX2
+                val blockW2 = period2 / 2f
+                while (x2 < totalW + period2) {
+                    drawRect(
+                        color = barColor,
+                        topLeft = Offset(x2, top + halfBarH),
+                        size = Size(blockW2, halfBarH),
+                    )
+                    x2 += period2
+                }
+
+                // When in tune: Draw central emerald highlight glow behind the reticle
+                if (active && inTune) {
+                    val glowW = 48.dp.toPx()
+                    drawRect(
+                        color = cs.tertiary.copy(alpha = 0.30f),
+                        topLeft = Offset(totalW / 2f - glowW / 2f, top),
+                        size = Size(glowW, barH),
+                    )
+                }
+            }
+
+            // Central reticle (Center target line & pointer notches)
+            val centerX = totalW / 2f
+            val reticleColor = if (!active) cs.outlineVariant else inTuneGlow
+            val reticleWidth = if (active && inTune) 3.dp.toPx() else 2.dp.toPx()
+
+            // Vertical crosshair
+            drawLine(
+                color = reticleColor,
+                start = Offset(centerX, top - 3.dp.toPx()),
+                end = Offset(centerX, top + barH + 3.dp.toPx()),
+                strokeWidth = reticleWidth,
+            )
+
+            // Top pointer triangle
+            val notchSize = 6.dp.toPx()
+            val topTriangle = Path().apply {
+                moveTo(centerX - notchSize, top - 6.dp.toPx())
+                lineTo(centerX + notchSize, top - 6.dp.toPx())
+                lineTo(centerX, top + 1.dp.toPx())
+                close()
+            }
+            drawPath(topTriangle, color = reticleColor)
+
+            // Bottom pointer triangle
+            val bottomTriangle = Path().apply {
+                moveTo(centerX - notchSize, top + barH + 6.dp.toPx())
+                lineTo(centerX + notchSize, top + barH + 6.dp.toPx())
+                lineTo(centerX, top + barH - 1.dp.toPx())
+                close()
+            }
+            drawPath(bottomTriangle, color = reticleColor)
+        }
+
+        // Subtitle indicators below strobe band
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                "◄ ♭ FLAT",
+                style = MaterialTheme.typography.labelSmall,
+                color = cs.onSurfaceVariant,
+            )
+            Text(
+                when {
+                    !active -> "STROBE STANDBY"
+                    inTune -> "● IN TUNE · LOCKED"
+                    cents < 0 -> "DRIFTING LEFT"
+                    else -> "DRIFTING RIGHT"
+                },
+                style = MaterialTheme.typography.labelMediumEmphasized,
+                color = if (active && inTune) cs.tertiary else cs.onSurfaceVariant,
+            )
+            Text(
+                "SHARP ♯ ►",
+                style = MaterialTheme.typography.labelSmall,
+                color = cs.onSurfaceVariant,
+            )
+        }
+    }
+}
+
 // ---- Cents meter -----------------------------------------------------------------------------------------------
 
 @Composable
@@ -543,7 +756,7 @@ private fun CentsMeter(cents: Float, active: Boolean, inTune: Boolean) {
         animationSpec = MaterialTheme.motionScheme.defaultEffectsSpec(),
         label = "pill",
     )
-    Column {
+    Column(Modifier.testTag("cents_meter")) {
         Canvas(Modifier.fillMaxWidth().height(72.dp)) {
             val barH = 40.dp.toPx()
             val top = (size.height - barH) / 2
@@ -608,8 +821,10 @@ private fun StringRow(s: TunerUiState, onString: (Int) -> Unit) {
 private fun SettingsSheet(
     a4: Float,
     leftHanded: Boolean,
+    displayMode: TunerDisplayMode,
     onA4: (Float) -> Unit,
     onLeftHanded: (Boolean) -> Unit,
+    onDisplayMode: (TunerDisplayMode) -> Unit,
     onDismiss: () -> Unit,
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss) {
@@ -618,6 +833,30 @@ private fun SettingsSheet(
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             Text("Settings", style = MaterialTheme.typography.headlineMediumEmphasized)
+
+            Row(
+                Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Column(Modifier.weight(1f).padding(end = 16.dp)) {
+                    Text("Strobe tuner display", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        "Replaces the cents needle with an animated stroboscopic drift band",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Switch(
+                    checked = displayMode == TunerDisplayMode.STROBE,
+                    onCheckedChange = { checked ->
+                        onDisplayMode(if (checked) TunerDisplayMode.STROBE else TunerDisplayMode.NEEDLE)
+                    },
+                    modifier = Modifier.testTag("strobe_display_switch"),
+                )
+            }
+
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 
             Row(
                 Modifier.fillMaxWidth(),

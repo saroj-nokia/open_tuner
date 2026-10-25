@@ -29,10 +29,16 @@ import kotlinx.coroutines.withContext
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
+enum class TunerDisplayMode {
+    NEEDLE,
+    STROBE,
+}
+
 data class TunerUiState(
     val a4: Float,
     val tuning: Tuning,
     val leftHanded: Boolean = false,
+    val displayMode: TunerDisplayMode = TunerDisplayMode.NEEDLE,
     val customTunings: List<Tuning> = emptyList(),
     val lockedString: Int? = null,
     val activeString: Int? = null,
@@ -49,12 +55,18 @@ class TunerViewModel(app: Application) : AndroidViewModel(app) {
     private val engine = AudioEngine()
     private val detector = YinPitchDetector(engine.sampleRate)
     private val loadedCustom = CustomTuningStore.deserialize(prefs.getString("custom_tunings", null))
+    private val loadedDisplayMode = try {
+        prefs.getString("display_mode", null)?.let { TunerDisplayMode.valueOf(it.uppercase()) } ?: TunerDisplayMode.NEEDLE
+    } catch (_: Exception) {
+        TunerDisplayMode.NEEDLE
+    }
 
     private val _state = MutableStateFlow(
         TunerUiState(
             a4 = prefs.getFloat("a4", 440f),
             tuning = Tunings.byId(prefs.getString("tuning", null), loadedCustom),
             leftHanded = prefs.getBoolean("left_handed", false),
+            displayMode = loadedDisplayMode,
             customTunings = loadedCustom,
         ),
     )
@@ -153,6 +165,11 @@ class TunerViewModel(app: Application) : AndroidViewModel(app) {
     fun setLeftHanded(enabled: Boolean) {
         _state.update { it.copy(leftHanded = enabled) }
         prefs.edit { putBoolean("left_handed", enabled) }
+    }
+
+    fun setDisplayMode(mode: TunerDisplayMode) {
+        _state.update { it.copy(displayMode = mode) }
+        prefs.edit { putString("display_mode", mode.name.lowercase()) }
     }
 
     fun addCustomTuning(name: String, strings: List<Int>): Tuning? {
