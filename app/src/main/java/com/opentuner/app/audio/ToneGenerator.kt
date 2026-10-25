@@ -138,6 +138,65 @@ object ToneGenerator {
     }
 
     @Synchronized
+    fun playStrum(
+        frequencies: List<Double>,
+        seconds: Double = 2.4,
+        strumIntervalMs: Double = 32.0,
+    ) {
+        stop()
+        if (frequencies.isEmpty()) return
+
+        val offsetSamplesPerString = (SAMPLE_RATE * (strumIntervalMs / 1000.0)).toInt()
+        val totalStrumDelaySamples = (frequencies.size - 1) * offsetSamplesPerString
+        val singleStringSamples = (SAMPLE_RATE * seconds).toInt()
+        val totalSamples = singleStringSamples + totalStrumDelaySamples
+
+        val mixBuffer = FloatArray(totalSamples)
+
+        for ((idx, freq) in frequencies.withIndex()) {
+            if (freq <= 0.0) continue
+            val stringAudio = audioSource.getAudio(freq, seconds, SAMPLE_RATE)
+            val startOffset = idx * offsetSamplesPerString
+            for (i in stringAudio.indices) {
+                if (startOffset + i < totalSamples) {
+                    mixBuffer[startOffset + i] += stringAudio[i].toFloat() / Short.MAX_VALUE
+                }
+            }
+        }
+
+        val count = frequencies.size.coerceAtLeast(1)
+        val headroom = 0.85f / kotlin.math.sqrt(count.toFloat())
+        val output = ShortArray(totalSamples)
+        for (i in 0 until totalSamples) {
+            val sample = mixBuffer[i] * headroom
+            val saturated = sample / (1.0f + kotlin.math.abs(sample) * 0.2f)
+            output[i] = (saturated.coerceIn(-1.0f, 1.0f) * Short.MAX_VALUE).toInt().toShort()
+        }
+
+        val n = output.size
+        val t = AudioTrack.Builder()
+            .setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_MEDIA)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                    .build(),
+            )
+            .setAudioFormat(
+                AudioFormat.Builder()
+                    .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                    .setSampleRate(SAMPLE_RATE)
+                    .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
+                    .build(),
+            )
+            .setBufferSizeInBytes(n * 2)
+            .setTransferMode(AudioTrack.MODE_STATIC)
+            .build()
+        t.write(output, 0, n)
+        t.play()
+        track = t
+    }
+
+    @Synchronized
     fun stop() {
         track?.let {
             runCatching { it.stop() }

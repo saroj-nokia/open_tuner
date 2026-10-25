@@ -112,17 +112,20 @@ import kotlin.math.roundToInt
 enum class AppScreen {
     TUNER,
     METRONOME,
+    CHORDS,
 }
 
 @Composable
 fun TunerRoute(
     vm: TunerViewModel = viewModel(),
     metronomeVm: MetronomeViewModel = viewModel(),
+    chordVm: ChordViewModel = viewModel(),
 ) {
     val context = LocalContext.current
     var currentScreen by remember { mutableStateOf(AppScreen.TUNER) }
     val state by vm.state.collectAsStateWithLifecycle()
     val metronomeState by metronomeVm.state.collectAsStateWithLifecycle()
+    val chordState by chordVm.state.collectAsStateWithLifecycle()
 
     var granted by remember {
         mutableStateOf(
@@ -169,6 +172,18 @@ fun TunerRoute(
                     icon = { Icon(Icons.Rounded.Refresh, contentDescription = "Metronome") },
                     label = { Text("Metronome") },
                 )
+                NavigationBarItem(
+                    selected = currentScreen == AppScreen.CHORDS,
+                    onClick = {
+                        if (currentScreen != AppScreen.CHORDS) {
+                            vm.stopListening()
+                            metronomeVm.stop()
+                            currentScreen = AppScreen.CHORDS
+                        }
+                    },
+                    icon = { ChordNavIcon(selected = currentScreen == AppScreen.CHORDS) },
+                    label = { Text("Chords") },
+                )
             }
         },
     ) { padding ->
@@ -185,7 +200,10 @@ fun TunerRoute(
                             onString = vm::selectString,
                             onTuning = vm::setTuning,
                             onA4 = vm::setA4,
-                            onLeftHanded = vm::setLeftHanded,
+                            onLeftHanded = { enabled ->
+                                vm.setLeftHanded(enabled)
+                                chordVm.setLeftHanded(enabled)
+                            },
                             onAddCustomTuning = vm::addCustomTuning,
                             onDeleteCustomTuning = vm::deleteCustomTuning,
                             onPreviewPitch = vm::playPreview,
@@ -216,8 +234,38 @@ fun TunerRoute(
                         onBack = { currentScreen = AppScreen.TUNER },
                     )
                 }
+                AppScreen.CHORDS -> {
+                    ChordScreen(
+                        state = chordState,
+                        onSelectRoot = chordVm::selectRoot,
+                        onSelectType = chordVm::selectType,
+                        onToggleLeftHanded = chordVm::toggleLeftHanded,
+                        onStrum = chordVm::strum,
+                        onBack = { currentScreen = AppScreen.TUNER },
+                    )
+                }
             }
         }
+    }
+}
+
+@Composable
+private fun ChordNavIcon(selected: Boolean) {
+    val color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+    Canvas(modifier = Modifier.size(22.dp)) {
+        val w = size.width
+        val h = size.height
+        val stroke = 1.6.dp.toPx()
+        for (i in 0..2) {
+            val x = w * (0.22f + i * 0.28f)
+            drawLine(color, Offset(x, 2.dp.toPx()), Offset(x, h - 2.dp.toPx()), strokeWidth = stroke)
+        }
+        for (j in 0..2) {
+            val y = h * (0.22f + j * 0.28f)
+            drawLine(color, Offset(w * 0.22f, y), Offset(w * 0.78f, y), strokeWidth = stroke)
+        }
+        drawCircle(color, radius = 2.4.dp.toPx(), center = Offset(w * 0.22f, h * 0.36f))
+        drawCircle(color, radius = 2.4.dp.toPx(), center = Offset(w * 0.50f, h * 0.64f))
     }
 }
 
