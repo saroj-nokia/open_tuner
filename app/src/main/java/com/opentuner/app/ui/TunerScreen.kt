@@ -80,6 +80,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
@@ -107,6 +108,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.graphics.shapes.Morph
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -133,7 +136,7 @@ fun TunerRoute(
     chordVm: ChordViewModel = viewModel(),
 ) {
     val context = LocalContext.current
-    var currentScreen by remember { mutableStateOf(AppScreen.TUNER) }
+    var currentScreen by rememberSaveable { mutableStateOf(AppScreen.TUNER) }
     val state by vm.state.collectAsStateWithLifecycle()
     val metronomeState by metronomeVm.state.collectAsStateWithLifecycle()
     val chordState by chordVm.state.collectAsStateWithLifecycle()
@@ -150,6 +153,9 @@ fun TunerRoute(
         if (granted && currentScreen == AppScreen.TUNER) vm.startListening()
         onPauseOrDispose { vm.stopListening() }
     }
+
+    // No foreground service, so Android may silence a backgrounded metronome at random; stop it cleanly instead.
+    LifecycleEventEffect(Lifecycle.Event.ON_STOP) { metronomeVm.stop() }
 
     val view = LocalView.current
     DisposableEffect(Unit) {

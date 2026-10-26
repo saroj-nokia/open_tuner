@@ -102,6 +102,9 @@ class TunerViewModel(app: Application) : AndroidViewModel(app) {
     private var lastTarget: Int? = null
     private var smoothCents = 0f
 
+    // The speaker chime is loud enough for the mic to hear (C6 is inside the detector's range), so skip frames while it rings.
+    @Volatile private var ignoreAudioUntil = 0L
+
     fun startListening() {
         if (listenJob?.isActive == true) return
         listenJob = viewModelScope.launch {
@@ -114,7 +117,9 @@ class TunerViewModel(app: Application) : AndroidViewModel(app) {
                     AudioAnalysis(pitch, rms, db, aboveGate)
                 }
                 .flowOn(Dispatchers.Default)
-                .collect { if (!_state.value.toneActive) onAudioAnalysis(it) }
+                .collect {
+                    if (!_state.value.toneActive && SystemClock.elapsedRealtime() >= ignoreAudioUntil) onAudioAnalysis(it)
+                }
         }
     }
 
@@ -185,6 +190,8 @@ class TunerViewModel(app: Application) : AndroidViewModel(app) {
         val trigger = affirmationTracker.update(targetMidi, smoothCents, hasSignal = true, currentTimeMs = now)
 
         if (trigger.shouldAffirm && s.inTuneChimeEnabled) {
+            // 0.22 s chime + room tail + the 93 ms analysis window that still holds chime samples.
+            ignoreAudioUntil = now + 500
             viewModelScope.launch(Dispatchers.Default) {
                 ToneGenerator.playInTuneChime()
             }
