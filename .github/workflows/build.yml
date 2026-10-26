@@ -21,7 +21,15 @@ jobs:
         with:
           gradle-version: 9.3.1
       - name: Unit tests and debug APK
-        run: gradle test assembleDebug --stacktrace
+        run: |
+          set -o pipefail
+          gradle test assembleDebug --stacktrace 2>&1 | tee build.log
+      # Puts the compiler errors in the run's annotations so they can be read without downloading the full log.
+      - name: Summarise errors
+        if: failure()
+        run: |
+          msg=$(grep -E '^e: |What went wrong|Execution failed|FAILED' -A2 build.log | sed 's#file:///home/runner/work/open_tuner/open_tuner/app/src/##' | head -40 | paste -sd'|' || true)
+          echo "::error title=Build errors::$msg"
       - uses: actions/upload-artifact@v4
         with:
           name: OpenTuner-debug-apk

@@ -73,8 +73,9 @@ class MetronomeEngine(
     private val sampleRate: Int = 44100,
 ) {
     @Volatile private var isRunning = false
-    private var audioTrack: AudioTrack? = null
-    private var audioThread: Thread? = null
+
+    // Bumped on every start/stop so a stale audio thread can never keep playing after a quick stop-then-start.
+    @Volatile private var runId = 0
 
     @Volatile var bpm: Int = 120
     @Volatile var timeSignature: TimeSignature = TimeSignature(4, 4)
@@ -127,21 +128,30 @@ class MetronomeEngine(
             .build()
 
         track.play()
-        audioTrack = track
+        val id = ++runId
 
-        audioThread = Thread({
+        Thread({
             android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_URGENT_AUDIO)
-            runAudioLoop(track)
-        }, "MetronomeStreamThread").apply { start() }
+            try {
+                runAudioLoop(track, id)
+            } finally {
+                // This thread owns the track, so stop() never makes the UI thread wait on the audio driver.
+                runCatching {
+                    track.pause()
+                    track.flush()
+                }
+                track.release()
+            }
+        }, "MetronomeStreamThread").start()
     }
 
-    private fun runAudioLoop(track: AudioTrack) {
+    private fun runAudioLoop(track: AudioTrack, id: Int) {
         val chunkSize = 512
         val pcm = ShortArray(chunkSize)
         var sampleInBeat = 0
         var currentBeat = 0
 
-        while (isRunning) {
+        while (isRunning && runId == id) {
             val interval = MetronomeMath.samplesPerBeat(bpm, timeSignature, sampleRate)
             val sig = timeSignature
             val accent = accentFirstBeat
@@ -179,16 +189,7 @@ class MetronomeEngine(
     fun stop() {
         if (!isRunning) return
         isRunning = false
-        audioThread?.interrupt()
-        audioThread = null
-
-        audioTrack?.let {
-            runCatching {
-                it.stop()
-                it.release()
-            }
-        }
-        audioTrack = null
+        runId++
     }
 
     fun isPlaying(): Boolean = isRunning

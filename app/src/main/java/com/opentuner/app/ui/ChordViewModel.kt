@@ -8,6 +8,7 @@ import com.opentuner.app.audio.ToneGenerator
 import com.opentuner.app.music.ChordType
 import com.opentuner.app.music.ChordVoicing
 import com.opentuner.app.music.Chords
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -68,7 +69,8 @@ class ChordViewModel(app: Application) : AndroidViewModel(app) {
         val voicing = Chords.getVoicing(s.selectedRoot, s.selectedType)
         val freqs = voicing.soundedFrequencies(s.a4)
         if (freqs.isNotEmpty()) {
-            ToneGenerator.playStrum(freqs)
+            // Synthesising six strings is real CPU work; keep it off the UI thread.
+            viewModelScope.launch(Dispatchers.Default) { ToneGenerator.playStrum(freqs) }
             strumJob?.cancel()
             strumJob = viewModelScope.launch {
                 _state.update { it.copy(isStrumming = true) }

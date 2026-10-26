@@ -8,7 +8,12 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
@@ -87,6 +92,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.geometry.Size
@@ -137,6 +145,9 @@ fun TunerRoute(
 ) {
     val context = LocalContext.current
     var currentScreen by rememberSaveable { mutableStateOf(AppScreen.TUNER) }
+    // Plays on every cold start; saved so a rotation doesn't replay it.
+    var introDone by rememberSaveable { mutableStateOf(false) }
+    val heroBounds = remember { mutableStateOf<Rect?>(null) }
     val state by vm.state.collectAsStateWithLifecycle()
     val metronomeState by metronomeVm.state.collectAsStateWithLifecycle()
     val chordState by chordVm.state.collectAsStateWithLifecycle()
@@ -163,6 +174,7 @@ fun TunerRoute(
         onDispose { view.keepScreenOn = false }
     }
 
+    Box(Modifier.fillMaxSize()) {
     Scaffold(
         containerColor = MaterialTheme.colorScheme.surface,
         bottomBar = {
@@ -182,7 +194,6 @@ fun TunerRoute(
                     selected = currentScreen == AppScreen.METRONOME,
                     onClick = {
                         if (currentScreen != AppScreen.METRONOME) {
-                            vm.stopListening()
                             currentScreen = AppScreen.METRONOME
                         }
                     },
@@ -193,7 +204,6 @@ fun TunerRoute(
                     selected = currentScreen == AppScreen.CHORDS,
                     onClick = {
                         if (currentScreen != AppScreen.CHORDS) {
-                            vm.stopListening()
                             metronomeVm.stop()
                             currentScreen = AppScreen.CHORDS
                         }
@@ -209,7 +219,13 @@ fun TunerRoute(
                 .fillMaxSize()
                 .padding(padding),
         ) {
-            when (currentScreen) {
+            val motion = MaterialTheme.motionScheme
+            AnimatedContent(
+                targetState = currentScreen,
+                transitionSpec = { fadeIn(motion.fastEffectsSpec()) togetherWith fadeOut(motion.fastEffectsSpec()) },
+                label = "screens",
+            ) { screen ->
+            when (screen) {
                 AppScreen.TUNER -> {
                     if (granted) {
                         TunerScreen(
@@ -228,6 +244,8 @@ fun TunerRoute(
                             onAddCustomTuning = vm::addCustomTuning,
                             onDeleteCustomTuning = vm::deleteCustomTuning,
                             onPreviewPitch = vm::playPreview,
+                            heroHidden = !introDone,
+                            onHeroBounds = { heroBounds.value = it },
                         )
                     } else {
                         PermissionScreen(
@@ -266,7 +284,10 @@ fun TunerRoute(
                     )
                 }
             }
+            }
         }
+    }
+    if (!introDone) IntroOverlay(heroBounds = heroBounds, onFinished = { introDone = true })
     }
 }
 
@@ -304,6 +325,8 @@ private fun TunerScreen(
     onAddCustomTuning: (String, List<Int>) -> Tuning?,
     onDeleteCustomTuning: (String) -> Unit,
     onPreviewPitch: (Int) -> Unit,
+    heroHidden: Boolean,
+    onHeroBounds: (Rect) -> Unit,
 ) {
     var showSettings by remember { mutableStateOf(false) }
     var showCustomSheet by remember { mutableStateOf(false) }
@@ -343,87 +366,22 @@ private fun TunerScreen(
                 gateDb = state.noiseGateDb,
             )
 
-            NoteHero(state, Modifier.weight(1f).fillMaxWidth())
+            NoteHero(state, heroHidden, onHeroBounds, Modifier.weight(1f).fillMaxWidth())
             Status(state)
             if (state.displayMode == TunerDisplayMode.STROBE) {
                 StrobeMeter(state.cents, state.hasSignal, state.inTune)
             } else {
                 CentsMeter(state.cents, state.hasSignal, state.inTune)
             }
-            StringRow(state, onString)
+            StringRow(state.tuning, state.activeString, state.lockedString, state.leftHanded, onString)
 
-            var selectedInstrument by remember(state.tuning.id) {
-                mutableStateOf(state.tuning.instrument)
-            }
-
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    items(Tunings.instruments) { inst ->
-                        FilterChip(
-                            selected = inst == selectedInstrument,
-                            onClick = {
-                                selectedInstrument = inst
-                                if (inst == "Custom") {
-                                    if (state.customTunings.isNotEmpty() && state.tuning.instrument != "Custom") {
-                                        onTuning(state.customTunings.first())
-                                    }
-                                } else {
-                                    val tunings = Tunings.forInstrument(inst, state.customTunings)
-                                    if (tunings.isNotEmpty() && tunings.none { it.id == state.tuning.id }) {
-                                        onTuning(tunings.first())
-                                    }
-                                }
-                            },
-                            leadingIcon = if (inst == "Custom") {
-                                { Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(16.dp)) }
-                            } else null,
-                            label = { Text(inst) },
-                        )
-                    }
-                }
-
-                if (selectedInstrument == "Custom") {
-                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        item {
-                            AssistChip(
-                                onClick = { showCustomSheet = true },
-                                leadingIcon = { Icon(Icons.Rounded.Add, contentDescription = "New custom tuning", modifier = Modifier.size(16.dp)) },
-                                label = { Text("New Tuning") },
-                            )
-                        }
-                        items(state.customTunings) { t ->
-                            FilterChip(
-                                selected = t.id == state.tuning.id,
-                                onClick = { onTuning(t) },
-                                label = { Text(t.name) },
-                                trailingIcon = {
-                                    IconButton(
-                                        onClick = { tuningToDelete = t },
-                                        modifier = Modifier.size(20.dp),
-                                    ) {
-                                        Icon(Icons.Rounded.Close, contentDescription = "Delete ${t.name}", modifier = Modifier.size(14.dp))
-                                    }
-                                },
-                            )
-                        }
-                    }
-                } else {
-                    val currentTunings = remember(selectedInstrument, state.customTunings) {
-                        Tunings.forInstrument(selectedInstrument, state.customTunings)
-                    }
-                    if (currentTunings.size > 1) {
-                        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            items(currentTunings) { t ->
-                                FilterChip(
-                                    selected = t.id == state.tuning.id,
-                                    onClick = { onTuning(t) },
-                                    label = { Text(t.name) },
-                                )
-                            }
-                        }
-                    }
-                }
-            }
+            TuningPicker(
+                tuning = state.tuning,
+                customTunings = state.customTunings,
+                onTuning = onTuning,
+                onNewCustom = { showCustomSheet = true },
+                onDeleteRequest = { tuningToDelete = it },
+            )
             Spacer(Modifier.height(4.dp))
         }
 
@@ -480,10 +438,97 @@ private fun TunerScreen(
     }
 }
 
+/** Split out of TunerScreen so the chips don't recompose on every audio frame. */
+@Composable
+private fun TuningPicker(
+    tuning: Tuning,
+    customTunings: List<Tuning>,
+    onTuning: (Tuning) -> Unit,
+    onNewCustom: () -> Unit,
+    onDeleteRequest: (Tuning) -> Unit,
+) {
+    var selectedInstrument by remember(tuning.id) {
+        mutableStateOf(tuning.instrument)
+    }
+
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            items(Tunings.instruments) { inst ->
+                FilterChip(
+                    selected = inst == selectedInstrument,
+                    onClick = {
+                        selectedInstrument = inst
+                        if (inst == "Custom") {
+                            if (customTunings.isNotEmpty() && tuning.instrument != "Custom") {
+                                onTuning(customTunings.first())
+                            }
+                        } else {
+                            val tunings = Tunings.forInstrument(inst, customTunings)
+                            if (tunings.isNotEmpty() && tunings.none { it.id == tuning.id }) {
+                                onTuning(tunings.first())
+                            }
+                        }
+                    },
+                    leadingIcon = if (inst == "Custom") {
+                        { Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(16.dp)) }
+                    } else null,
+                    label = { Text(inst) },
+                )
+            }
+        }
+
+        if (selectedInstrument == "Custom") {
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                item {
+                    AssistChip(
+                        onClick = { onNewCustom() },
+                        leadingIcon = { Icon(Icons.Rounded.Add, contentDescription = "New custom tuning", modifier = Modifier.size(16.dp)) },
+                        label = { Text("New Tuning") },
+                    )
+                }
+                items(customTunings) { t ->
+                    FilterChip(
+                        selected = t.id == tuning.id,
+                        onClick = { onTuning(t) },
+                        label = { Text(t.name) },
+                        trailingIcon = {
+                            IconButton(
+                                onClick = { onDeleteRequest(t) },
+                                modifier = Modifier.size(20.dp),
+                            ) {
+                                Icon(Icons.Rounded.Close, contentDescription = "Delete ${t.name}", modifier = Modifier.size(14.dp))
+                            }
+                        },
+                    )
+                }
+            }
+        } else {
+            val currentTunings = remember(selectedInstrument, customTunings) {
+                Tunings.forInstrument(selectedInstrument, customTunings)
+            }
+            if (currentTunings.size > 1) {
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(currentTunings) { t ->
+                        FilterChip(
+                            selected = t.id == tuning.id,
+                            onClick = { onTuning(t) },
+                            label = { Text(t.name) },
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
 // ---- Hero: a Material shape that morphs idle -> listening -> in tune -------------------------------------------
 
 /** Draws a [Morph] (from graphics-shapes) as a Compose shape. Polygons must be normalized to 0..1. */
 private class MorphShape(private val morph: Morph, private val progress: Float) : Shape {
+    // Equal shapes let Compose skip re-clipping on frames where the morph hasn't moved.
+    override fun equals(other: Any?) = other is MorphShape && other.morph === morph && other.progress == progress
+    override fun hashCode() = 31 * System.identityHashCode(morph) + progress.hashCode()
+
     override fun createOutline(size: Size, layoutDirection: LayoutDirection, density: Density): Outline {
         val cubics = morph.asCubics(progress)
         val path = Path()
@@ -500,15 +545,26 @@ private class MorphShape(private val morph: Morph, private val progress: Float) 
     }
 }
 
-@Composable
-private fun NoteHero(s: TunerUiState, modifier: Modifier = Modifier) {
-    val cs = MaterialTheme.colorScheme
-    val idleToListening = remember {
+/** Built once per process; rebuilding a Morph on every visit to the tuner tab is wasted work. */
+internal object HeroMorphs {
+    val idleToListening: Morph by lazy {
         Morph(MaterialShapes.Cookie9Sided.normalized(), MaterialShapes.Cookie12Sided.normalized())
     }
-    val listeningToTuned = remember {
+    val listeningToTuned: Morph by lazy {
         Morph(MaterialShapes.Cookie12Sided.normalized(), MaterialShapes.Sunny.normalized())
     }
+}
+
+@Composable
+private fun NoteHero(
+    s: TunerUiState,
+    heroHidden: Boolean,
+    onBounds: (Rect) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val cs = MaterialTheme.colorScheme
+    val idleToListening = HeroMorphs.idleToListening
+    val listeningToTuned = HeroMorphs.listeningToTuned
 
     val tuned = s.hasSignal && s.inTune
     val stage by animateFloatAsState(
@@ -522,18 +578,25 @@ private fun NoteHero(s: TunerUiState, modifier: Modifier = Modifier) {
         label = "container",
     )
     val onContainer = if (tuned) cs.onTertiaryContainer else if (s.hasSignal) cs.onPrimaryContainer else cs.onSurfaceVariant
-    val spin by rememberInfiniteTransition(label = "spin").animateFloat(
-        initialValue = 0f,
-        targetValue = 360f,
-        animationSpec = infiniteRepeatable(tween(30_000, easing = LinearEasing)),
-        label = "spin",
-    )
+    // Starts turning only once the intro hands over, from 0 degrees, so the intro's shape and this one line up exactly.
+    val spin = remember { Animatable(0f) }
+    LaunchedEffect(heroHidden) {
+        if (!heroHidden) spin.animateTo(360f, infiniteRepeatable(tween(30_000, easing = LinearEasing)))
+    }
     val shape = if (stage <= 1f) MorphShape(idleToListening, stage) else MorphShape(listeningToTuned, stage - 1f)
     val locked = s.lockedString?.let { Note(s.tuning.strings[it]).label }
 
-    BoxWithConstraints(modifier, contentAlignment = Alignment.Center) {
-        Box(Modifier.size(minOf(maxWidth, maxHeight)), contentAlignment = Alignment.Center) {
-            Box(Modifier.fillMaxSize().graphicsLayer { rotationZ = spin }.clip(shape).background(container))
+    BoxWithConstraints(
+        modifier.graphicsLayer { alpha = if (heroHidden) 0f else 1f }, // hidden while the intro's own copy of the shape is on screen
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(
+            Modifier
+                .size(minOf(maxWidth, maxHeight))
+                .onGloballyPositioned { onBounds(it.boundsInRoot()) },
+            contentAlignment = Alignment.Center,
+        ) {
+            Box(Modifier.fillMaxSize().graphicsLayer { rotationZ = spin.value }.clip(shape).background(container))
             if (s.inTuneHoldProgress > 0f) {
                 val isLocked = s.inTuneHoldProgress >= 1f
                 Canvas(
@@ -836,24 +899,30 @@ private fun CentsMeter(cents: Float, active: Boolean, inTune: Boolean) {
 // ---- Strings ---------------------------------------------------------------------------------------------------
 
 @Composable
-private fun StringRow(s: TunerUiState, onString: (Int) -> Unit) {
+private fun StringRow(
+    tuning: Tuning,
+    activeString: Int?,
+    lockedString: Int?,
+    leftHanded: Boolean,
+    onString: (Int) -> Unit,
+) {
     val hint = when {
-        s.tuning.isChromatic -> "Chromatic — play any note"
-        s.lockedString == null -> "Auto-detect · tap a string to lock it and hear it"
-        else -> "Locked to ${Note(s.tuning.strings[s.lockedString]).label} · tap again to release"
+        tuning.isChromatic -> "Chromatic — play any note"
+        lockedString == null -> "Auto-detect · tap a string to lock it and hear it"
+        else -> "Locked to ${Note(tuning.strings[lockedString]).label} · tap again to release"
     }
-    val count = s.tuning.strings.size
+    val count = tuning.strings.size
     val spacing = if (count > 6) 4.dp else 6.dp
     val textStyle = if (count > 6) MaterialTheme.typography.labelSmall else MaterialTheme.typography.labelLarge
 
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        if (!s.tuning.isChromatic) {
-            val indices = if (s.leftHanded) s.tuning.strings.indices.reversed() else s.tuning.strings.indices
+        if (!tuning.isChromatic) {
+            val indices = if (leftHanded) tuning.strings.indices.reversed() else tuning.strings.indices
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(spacing)) {
                 indices.forEach { i ->
-                    val midi = s.tuning.strings[i]
+                    val midi = tuning.strings[i]
                     ToggleButton(
-                        checked = s.activeString == i,
+                        checked = activeString == i,
                         onCheckedChange = { onString(i) },
                         modifier = Modifier.weight(1f),
                         contentPadding = PaddingValues(0.dp),

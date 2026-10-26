@@ -5,6 +5,7 @@ import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioTrack
 import java.util.Random
+import java.util.concurrent.Executors
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.exp
@@ -102,24 +103,43 @@ class SampledStringAudioSource(
     }
 }
 
-/** Plucked-string audio generator playing through an AudioTrack. */
+/** Plucked-string audio generator playing through an AudioTrack. Safe to call from any thread. */
 object ToneGenerator {
     private const val SAMPLE_RATE = 44100
     private var track: AudioTrack? = null
 
+    // AudioTrack.stop()/release() can take tens of ms on some phones; do them here so the UI thread never waits on the audio driver.
+    private val releaser = Executors.newSingleThreadExecutor { r -> Thread(r, "ToneReleaser").apply { isDaemon = true } }
+
+    // Karplus-Strong output is deterministic, so repeated taps on the same string or chord reuse the rendered audio.
+    private val cache = object : LinkedHashMap<Pair<Double, Double>, ShortArray>(16, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Pair<Double, Double>, ShortArray>?) = size > 24
+    }
+
     /** Active audio source; can be swapped with SampledStringAudioSource or custom provider. */
     var audioSource: StringAudioSource = KarplusStrongSynth()
+        set(value) {
+            field = value
+            synchronized(cache) { cache.clear() }
+        }
 
-    @Synchronized
-    fun play(freq: Double, seconds: Double = 2.4) {
-        stop()
+    private fun render(freq: Double, seconds: Double): ShortArray {
+        val key = freq to seconds
+        synchronized(cache) { cache[key]?.let { return it } }
         val data = audioSource.getAudio(freq, seconds, SAMPLE_RATE)
+        synchronized(cache) { cache[key] = data }
+        return data
+    }
+
+    private val chimeAudio: ShortArray by lazy { generateInTuneChime(SAMPLE_RATE) }
+
+    private fun buildTrack(data: ShortArray, usage: Int, contentType: Int): AudioTrack {
         val n = data.size
         val t = AudioTrack.Builder()
             .setAudioAttributes(
                 AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_MEDIA)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                    .setUsage(usage)
+                    .setContentType(contentType)
                     .build(),
             )
             .setAudioFormat(
@@ -133,8 +153,25 @@ object ToneGenerator {
             .setTransferMode(AudioTrack.MODE_STATIC)
             .build()
         t.write(data, 0, n)
-        t.play()
-        track = t
+        return t
+    }
+
+    // The lock only guards the pointer swap; synthesis and track building happen outside it.
+    private fun swapIn(next: AudioTrack) {
+        val old = synchronized(this) { track.also { track = next } }
+        old?.let(::releaseAsync)
+        next.play()
+    }
+
+    private fun releaseAsync(t: AudioTrack) {
+        releaser.execute {
+            runCatching { t.stop() }
+            t.release()
+        }
+    }
+
+    fun play(freq: Double, seconds: Double = 2.4) {
+        swapIn(buildTrack(render(freq, seconds), AudioAttributes.USAGE_MEDIA, AudioAttributes.CONTENT_TYPE_MUSIC))
     }
 
     /** Generates a crystalline dual-harmonic bell chime for in-tune feedback. */
@@ -167,40 +204,21 @@ object ToneGenerator {
         return data
     }
 
-    @Synchronized
     fun playInTuneChime() {
-        stop()
-        val data = generateInTuneChime(SAMPLE_RATE)
-        val n = data.size
-        val t = AudioTrack.Builder()
-            .setAudioAttributes(
-                AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                    .build(),
-            )
-            .setAudioFormat(
-                AudioFormat.Builder()
-                    .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
-                    .setSampleRate(SAMPLE_RATE)
-                    .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
-                    .build(),
-            )
-            .setBufferSizeInBytes(n * 2)
-            .setTransferMode(AudioTrack.MODE_STATIC)
-            .build()
-        t.write(data, 0, n)
-        t.play()
-        track = t
+        swapIn(
+            buildTrack(
+                chimeAudio,
+                AudioAttributes.USAGE_ASSISTANCE_SONIFICATION,
+                AudioAttributes.CONTENT_TYPE_SONIFICATION,
+            ),
+        )
     }
 
-    @Synchronized
     fun playStrum(
         frequencies: List<Double>,
         seconds: Double = 2.4,
         strumIntervalMs: Double = 32.0,
     ) {
-        stop()
         if (frequencies.isEmpty()) return
 
         val offsetSamplesPerString = (SAMPLE_RATE * (strumIntervalMs / 1000.0)).toInt()
@@ -212,7 +230,7 @@ object ToneGenerator {
 
         for ((idx, freq) in frequencies.withIndex()) {
             if (freq <= 0.0) continue
-            val stringAudio = audioSource.getAudio(freq, seconds, SAMPLE_RATE)
+            val stringAudio = render(freq, seconds)
             val startOffset = idx * offsetSamplesPerString
             for (i in stringAudio.indices) {
                 if (startOffset + i < totalSamples) {
@@ -230,35 +248,11 @@ object ToneGenerator {
             output[i] = (saturated.coerceIn(-1.0f, 1.0f) * Short.MAX_VALUE).toInt().toShort()
         }
 
-        val n = output.size
-        val t = AudioTrack.Builder()
-            .setAudioAttributes(
-                AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_MEDIA)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
-                    .build(),
-            )
-            .setAudioFormat(
-                AudioFormat.Builder()
-                    .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
-                    .setSampleRate(SAMPLE_RATE)
-                    .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
-                    .build(),
-            )
-            .setBufferSizeInBytes(n * 2)
-            .setTransferMode(AudioTrack.MODE_STATIC)
-            .build()
-        t.write(output, 0, n)
-        t.play()
-        track = t
+        swapIn(buildTrack(output, AudioAttributes.USAGE_MEDIA, AudioAttributes.CONTENT_TYPE_MUSIC))
     }
 
-    @Synchronized
     fun stop() {
-        track?.let {
-            runCatching { it.stop() }
-            it.release()
-        }
-        track = null
+        val old = synchronized(this) { track.also { track = null } }
+        old?.let(::releaseAsync)
     }
 }
