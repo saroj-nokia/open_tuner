@@ -100,8 +100,6 @@ class MetronomeEngine(
     @Synchronized
     fun start() {
         if (isRunning) return
-        isRunning = true
-
         val minBufSize = AudioTrack.getMinBufferSize(
             sampleRate,
             AudioFormat.CHANNEL_OUT_MONO,
@@ -109,6 +107,7 @@ class MetronomeEngine(
         )
         val bufSize = max(minBufSize, 4096)
 
+        // Built before isRunning flips, so a device that refuses the track doesn't leave the engine stuck "running".
         val track = AudioTrack.Builder()
             .setAudioAttributes(
                 AudioAttributes.Builder()
@@ -127,6 +126,7 @@ class MetronomeEngine(
             .setTransferMode(AudioTrack.MODE_STREAM)
             .build()
 
+        isRunning = true
         track.play()
         val id = ++runId
 

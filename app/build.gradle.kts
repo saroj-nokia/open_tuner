@@ -15,13 +15,24 @@ android {
         versionName = "1.0"
     }
 
+    // Release signing comes from the environment so no key lives in the repo; without it the debug key is used.
+    val releaseKeystore = System.getenv("OPENTUNER_KEYSTORE")
+    if (releaseKeystore != null) {
+        signingConfigs.create("release") {
+            storeFile = file(releaseKeystore)
+            storePassword = System.getenv("OPENTUNER_STORE_PASSWORD")
+            keyAlias = System.getenv("OPENTUNER_KEY_ALIAS")
+            keyPassword = System.getenv("OPENTUNER_KEY_PASSWORD")
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            // shortcut: debug key so assembleRelease installs straight away; use your own keystore before publishing
-            signingConfig = signingConfigs.getByName("debug")
+            // shortcut: falls back to the public debug key so assembleRelease installs straight away; never publish that build
+            signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
         }
     }
 

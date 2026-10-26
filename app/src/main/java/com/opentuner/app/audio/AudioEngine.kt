@@ -40,8 +40,8 @@ class AudioEngine(val sampleRate: Int = 44100) {
 
         val shorts = ShortArray(hop)
         val win = FloatArray(window)
-        rec.startRecording()
         try {
+            rec.startRecording()
             while (currentCoroutineContext().isActive) {
                 var got = 0
                 while (got < hop) {

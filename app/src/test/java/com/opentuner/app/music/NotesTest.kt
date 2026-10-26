@@ -161,4 +161,15 @@ class NotesTest {
         assertEquals(1, customList.size)
         assertEquals("c_open", customList.first().id)
     }
+
+    @Test
+    fun customTuningNamesAreBoundedAndCannotForgeRecords() {
+        val strings = listOf(40, 45, 50, 55)
+        org.junit.Assert.assertNotNull(CustomTuningValidator.validate("x".repeat(25), strings))
+        org.junit.Assert.assertNull(CustomTuningValidator.validate("x".repeat(24), strings))
+
+        val evil = Tuning(id = "a", instrument = "Custom", name = "Hi\nevil\t40,45,50,55", strings = strings)
+        val back = CustomTuningStore.deserialize(CustomTuningStore.serialize(listOf(evil)))
+        assertEquals(1, back.size)
+    }
 }

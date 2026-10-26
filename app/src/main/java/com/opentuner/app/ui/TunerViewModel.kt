@@ -275,7 +275,7 @@ class TunerViewModel(app: Application) : AndroidViewModel(app) {
 
     fun addCustomTuning(name: String, strings: List<Int>): Tuning? {
         val error = CustomTuningValidator.validate(name, strings)
-        if (error != null) return null
+        if (error != null || _state.value.customTunings.size >= CustomTuningValidator.MAX_TUNINGS) return null
         val tuning = Tuning(
             id = "custom_${System.currentTimeMillis()}",
             instrument = "Custom",

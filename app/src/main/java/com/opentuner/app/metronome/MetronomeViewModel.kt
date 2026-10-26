@@ -89,6 +89,7 @@ class MetronomeViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     override fun onCleared() {
+        engine.onBeatCallback = null
         engine.stop()
     }
 }

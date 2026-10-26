@@ -103,9 +103,12 @@ object CustomTuningValidator {
     const val MAX_STRINGS = 8
     const val MIN_MIDI = 24
     const val MAX_MIDI = 88
+    const val MAX_NAME = 24
+    const val MAX_TUNINGS = 50
 
     fun validate(name: String, strings: List<Int>): String? {
         if (name.trim().isEmpty()) return "Tuning name cannot be empty"
+        if (name.length > MAX_NAME) return "Tuning name is limited to $MAX_NAME characters"
         if (strings.size !in MIN_STRINGS..MAX_STRINGS) {
             return "Tuning must have between $MIN_STRINGS and $MAX_STRINGS strings"
         }
@@ -119,7 +122,8 @@ object CustomTuningValidator {
 object CustomTuningStore {
     fun serialize(tunings: List<Tuning>): String =
         tunings.joinToString("\n") { t ->
-            val cleanName = t.name.replace("\t", " ").trim()
+            // Tabs and line breaks are the file's separators, so a name containing them could forge extra records.
+            val cleanName = t.name.replace(Regex("[\\t\\r\\n]"), " ").trim()
             val notesStr = t.strings.joinToString(",")
             "${t.id}\t$cleanName\t$notesStr"
         }
@@ -127,7 +131,7 @@ object CustomTuningStore {
     fun deserialize(data: String?): List<Tuning> {
         if (data.isNullOrBlank()) return emptyList()
         val list = mutableListOf<Tuning>()
-        data.lineSequence().forEach { line ->
+        data.lineSequence().take(CustomTuningValidator.MAX_TUNINGS).forEach { line ->
             val parts = line.split("\t")
             if (parts.size >= 3) {
                 val id = parts[0]
