@@ -24,6 +24,7 @@ All code, drawings and sounds in this repo are original. The app is inspired by 
 
 **Look and feel**
 - Material 3 Expressive: springy motion, morphing Material shapes, emphasized type, wallpaper colours on Android 12+
+- An About screen (Settings > About) with the version, license, source link and credits
 - A short intro animation (a tuning peg turns and the string settles) that grows into the tuner's note circle. Tap to skip. It is drawn in code, with no video or image files.
 
 ## Download
@@ -70,4 +71,4 @@ app/src/main/java/com/opentuner/app/
 
 ## License
 
-MIT, see [LICENSE](LICENSE).
+GNU General Public License v3.0, see [LICENSE](LICENSE). Open Tuner is free software: you can use, study, share and change it, and any version you distribute must stay under the same license with its source available. The libraries it uses (Jetpack Compose, Material 3, AndroidX) are Apache License 2.0, which is compatible with GPL v3.

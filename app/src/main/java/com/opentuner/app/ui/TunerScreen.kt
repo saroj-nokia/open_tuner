@@ -328,6 +328,7 @@ private fun TunerScreen(
     onHeroBounds: (Rect) -> Unit,
 ) {
     var showSettings by remember { mutableStateOf(false) }
+    var showAbout by remember { mutableStateOf(false) }
     var showCustomSheet by remember { mutableStateOf(false) }
     var tuningToDelete by remember { mutableStateOf<Tuning?>(null) }
     val haptic = LocalHapticFeedback.current
@@ -398,9 +399,15 @@ private fun TunerScreen(
             onNoiseGateDb = onNoiseGateDb,
             onInTuneChime = onInTuneChime,
             onInTuneHaptic = onInTuneHaptic,
+            onAbout = {
+                showSettings = false
+                showAbout = true
+            },
             onDismiss = { showSettings = false },
         )
     }
+
+    if (showAbout) AboutSheet(onDismiss = { showAbout = false })
 
     if (showCustomSheet) {
         CustomTuningSheet(
@@ -1036,6 +1043,7 @@ private fun SettingsSheet(
     onNoiseGateDb: (Float) -> Unit,
     onInTuneChime: (Boolean) -> Unit,
     onInTuneHaptic: (Boolean) -> Unit,
+    onAbout: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss) {
@@ -1200,6 +1208,12 @@ private fun SettingsSheet(
                         onCheckedChange = { onA4(hz.toFloat()) },
                     ) { Text("$hz") }
                 }
+            }
+
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
+            TextButton(onClick = onAbout, modifier = Modifier.fillMaxWidth()) {
+                Text("About, credits and licenses")
             }
         }
     }
