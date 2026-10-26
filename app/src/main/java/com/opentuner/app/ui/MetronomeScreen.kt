@@ -38,7 +38,6 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -196,9 +195,7 @@ fun MetronomeScreen(
         }
 
         // Tempo Slider
-        // The SliderState overload did not move the thumb in 1.5.0-beta02, so keep the working one and silence its warning.
-        @Suppress("DEPRECATION")
-        Slider(
+        ValueSlider(
             value = state.bpm.toFloat(),
             onValueChange = { onBpmChange(it.roundToInt()) },
             valueRange = 30f..300f,

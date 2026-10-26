@@ -68,7 +68,6 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedTextField
 import com.opentuner.app.metronome.MetronomeViewModel
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -1129,9 +1128,7 @@ private fun SettingsSheet(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
-                    // The SliderState overload did not move the thumb in 1.5.0-beta02, so keep the working one and silence its warning.
-                    @Suppress("DEPRECATION")
-                    Slider(
+                    ValueSlider(
                         value = noiseGateDb,
                         onValueChange = { onNoiseGateDb(it.roundToInt().toFloat()) },
                         valueRange = -60f..-24f,
@@ -1187,9 +1184,7 @@ private fun SettingsSheet(
 
             Text("Reference pitch", style = MaterialTheme.typography.titleMedium)
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                // The SliderState overload did not move the thumb in 1.5.0-beta02, so keep the working one and silence its warning.
-                @Suppress("DEPRECATION")
-                Slider(
+                ValueSlider(
                     value = a4,
                     onValueChange = { onA4(it.roundToInt().toFloat()) },
                     valueRange = 415f..466f,
