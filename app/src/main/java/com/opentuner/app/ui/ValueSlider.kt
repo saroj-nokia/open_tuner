@@ -45,5 +45,5 @@ fun ValueSlider(
         snapshotFlow { state.value }.collect { if (abs(it - latestValue) > 0.001f) latestOnChange(it) }
     }
 
-    Slider(state = state, modifier = modifier)
+    Slider(state = state, onValueChange = { state.value = it }, modifier = modifier)
 }
