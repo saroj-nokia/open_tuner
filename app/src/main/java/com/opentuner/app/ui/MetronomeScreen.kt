@@ -39,6 +39,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
+import androidx.compose.material3.rememberSliderState
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -197,10 +198,8 @@ fun MetronomeScreen(
 
         // Tempo Slider
         Slider(
-            value = state.bpm.toFloat(),
+            state = rememberSliderState(state.bpm.toFloat(), 270, trackRange = 30f..300f),
             onValueChange = { onBpmChange(it.roundToInt()) },
-            valueRange = 30f..300f,
-            steps = 270,
             modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
         )
 
