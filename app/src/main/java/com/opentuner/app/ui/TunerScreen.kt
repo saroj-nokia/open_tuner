@@ -69,7 +69,6 @@ import androidx.compose.material3.OutlinedTextField
 import com.opentuner.app.metronome.MetronomeViewModel
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
-import androidx.compose.material3.rememberSliderState
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -1131,8 +1130,10 @@ private fun SettingsSheet(
                     horizontalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
                     Slider(
-                        state = rememberSliderState(noiseGateDb, 35, trackRange = -60f..-24f),
+                        value = noiseGateDb,
                         onValueChange = { onNoiseGateDb(it.roundToInt().toFloat()) },
+                        valueRange = -60f..-24f,
+                        steps = 35,
                         modifier = Modifier.weight(1f).testTag("noise_gate_slider"),
                     )
                     Text(
@@ -1185,8 +1186,10 @@ private fun SettingsSheet(
             Text("Reference pitch", style = MaterialTheme.typography.titleMedium)
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 Slider(
-                    state = rememberSliderState(a4, 50, trackRange = 415f..466f),
+                    value = a4,
                     onValueChange = { onA4(it.roundToInt().toFloat()) },
+                    valueRange = 415f..466f,
+                    steps = 50,
                     modifier = Modifier.weight(1f),
                 )
                 Text("${a4.roundToInt()} Hz", style = MaterialTheme.typography.titleLargeEmphasized)
