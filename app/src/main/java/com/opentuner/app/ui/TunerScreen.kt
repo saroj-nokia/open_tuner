@@ -44,6 +44,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Build
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.AlertDialog
@@ -134,6 +135,7 @@ enum class AppScreen {
     TUNER,
     METRONOME,
     CHORDS,
+    ABOUT,
 }
 
 @Composable
@@ -210,6 +212,17 @@ fun TunerRoute(
                     icon = { ChordNavIcon(selected = currentScreen == AppScreen.CHORDS) },
                     label = { Text("Chords") },
                 )
+                NavigationBarItem(
+                    selected = currentScreen == AppScreen.ABOUT,
+                    onClick = {
+                        if (currentScreen != AppScreen.ABOUT) {
+                            metronomeVm.stop()
+                            currentScreen = AppScreen.ABOUT
+                        }
+                    },
+                    icon = { Icon(Icons.Rounded.Info, contentDescription = "About") },
+                    label = { Text("About") },
+                )
             }
         },
     ) { padding ->
@@ -282,6 +295,7 @@ fun TunerRoute(
                         onBack = { currentScreen = AppScreen.TUNER },
                     )
                 }
+                AppScreen.ABOUT -> AboutScreen(onBack = { currentScreen = AppScreen.TUNER })
             }
             }
         }
@@ -328,7 +342,6 @@ private fun TunerScreen(
     onHeroBounds: (Rect) -> Unit,
 ) {
     var showSettings by remember { mutableStateOf(false) }
-    var showAbout by remember { mutableStateOf(false) }
     var showCustomSheet by remember { mutableStateOf(false) }
     var tuningToDelete by remember { mutableStateOf<Tuning?>(null) }
     val haptic = LocalHapticFeedback.current
@@ -399,15 +412,9 @@ private fun TunerScreen(
             onNoiseGateDb = onNoiseGateDb,
             onInTuneChime = onInTuneChime,
             onInTuneHaptic = onInTuneHaptic,
-            onAbout = {
-                showSettings = false
-                showAbout = true
-            },
             onDismiss = { showSettings = false },
         )
     }
-
-    if (showAbout) AboutSheet(onDismiss = { showAbout = false })
 
     if (showCustomSheet) {
         CustomTuningSheet(
@@ -1043,7 +1050,6 @@ private fun SettingsSheet(
     onNoiseGateDb: (Float) -> Unit,
     onInTuneChime: (Boolean) -> Unit,
     onInTuneHaptic: (Boolean) -> Unit,
-    onAbout: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss) {
@@ -1208,12 +1214,6 @@ private fun SettingsSheet(
                         onCheckedChange = { onA4(hz.toFloat()) },
                     ) { Text("$hz") }
                 }
-            }
-
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-
-            TextButton(onClick = onAbout, modifier = Modifier.fillMaxWidth()) {
-                Text("About, credits and licenses")
             }
         }
     }

@@ -1,24 +1,24 @@
-@file:OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
+@file:OptIn(ExperimentalMaterial3ExpressiveApi::class)
 
 package com.opentuner.app.ui
 
 import android.content.pm.PackageManager
 import android.os.Build
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -56,7 +56,7 @@ private val libraryCredits = listOf(
 )
 
 @Composable
-fun AboutSheet(onDismiss: () -> Unit) {
+fun AboutScreen(onBack: () -> Unit) {
     val context = LocalContext.current
     val uriHandler = LocalUriHandler.current
     val version = remember {
@@ -78,62 +78,61 @@ fun AboutSheet(onDismiss: () -> Unit) {
         }
     }
 
-    ModalBottomSheet(onDismissRequest = onDismiss) {
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 24.dp)
-                .padding(bottom = 32.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text("Open Tuner", style = MaterialTheme.typography.headlineMediumEmphasized)
-                Text(
-                    "Version $version",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
+    BackHandler(onBack = onBack)
+
+    Column(
+        Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 20.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text("Open Tuner", style = MaterialTheme.typography.headlineMediumEmphasized)
             Text(
-                "A free, ad-free tuner, metronome and chord library. No accounts, no tracking, no internet access: " +
-                    "the microphone is used only to hear your instrument, and nothing is recorded or sent anywhere.",
+                "Version $version",
                 style = MaterialTheme.typography.bodyMedium,
-            )
-
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-
-            Text("License", style = MaterialTheme.typography.titleMedium)
-            Text(
-                "Open Tuner is free software, released under the GNU General Public License, version 3. " +
-                    "You may use, study, share and change it. If you distribute a modified version, it must stay " +
-                    "under the same license with its source available. It comes with no warranty.",
-                style = MaterialTheme.typography.bodyMedium,
-            )
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FilledTonalButton(onClick = { open(SOURCE_URL) }) { Text("Source code") }
-                OutlinedButton(onClick = { open(GPL_URL) }) { Text("Full license text") }
-            }
-
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-
-            Text("Credits", style = MaterialTheme.typography.titleMedium)
-            methodCredits.forEach { CreditRow(it, onOpen = ::open) }
-
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-
-            Text("Open source libraries", style = MaterialTheme.typography.titleMedium)
-            libraryCredits.forEach { CreditRow(it, onOpen = ::open) }
-            OutlinedButton(onClick = { open(APACHE_URL) }) { Text("Apache License 2.0") }
-
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-
-            Text(
-                "© 2026 Saroj-Tajpuriya",
-                style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
+        Text(
+            "A free, ad-free tuner, metronome and chord library. No accounts, no tracking, no internet access: " +
+                "the microphone is used only to hear your instrument, and nothing is recorded or sent anywhere.",
+            style = MaterialTheme.typography.bodyMedium,
+        )
+
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
+        Text("License", style = MaterialTheme.typography.titleMedium)
+        Text(
+            "Open Tuner is free software, released under the GNU General Public License, version 3. " +
+                "You may use, study, share and change it. If you distribute a modified version, it must stay " +
+                "under the same license with its source available. It comes with no warranty.",
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FilledTonalButton(onClick = { open(SOURCE_URL) }) { Text("Source code") }
+            OutlinedButton(onClick = { open(GPL_URL) }) { Text("Full license text") }
+        }
+
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
+        Text("Credits", style = MaterialTheme.typography.titleMedium)
+        methodCredits.forEach { CreditRow(it, onOpen = ::open) }
+
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
+        Text("Open source libraries", style = MaterialTheme.typography.titleMedium)
+        libraryCredits.forEach { CreditRow(it, onOpen = ::open) }
+        OutlinedButton(onClick = { open(APACHE_URL) }) { Text("Apache License 2.0") }
+
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
+        Text(
+            "© 2026 Saroj-Tajpuriya",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 

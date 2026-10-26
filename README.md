@@ -24,7 +24,7 @@ All code, drawings and sounds in this repo are original. The app is inspired by 
 
 **Look and feel**
 - Material 3 Expressive: springy motion, morphing Material shapes, emphasized type, wallpaper colours on Android 12+
-- An About screen (Settings > About) with the version, license, source link and credits
+- An About tab on the bottom bar with the version, license, source link and tappable credits
 - A short intro animation (a tuning peg turns and the string settles) that grows into the tuner's note circle. Tap to skip. It is drawn in code, with no video or image files.
 
 ## Download
