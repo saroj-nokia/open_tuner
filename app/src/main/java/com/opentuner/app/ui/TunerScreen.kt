@@ -1129,6 +1129,8 @@ private fun SettingsSheet(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
+                    // The SliderState overload did not move the thumb in 1.5.0-beta02, so keep the working one and silence its warning.
+                    @Suppress("DEPRECATION")
                     Slider(
                         value = noiseGateDb,
                         onValueChange = { onNoiseGateDb(it.roundToInt().toFloat()) },
@@ -1185,6 +1187,8 @@ private fun SettingsSheet(
 
             Text("Reference pitch", style = MaterialTheme.typography.titleMedium)
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                // The SliderState overload did not move the thumb in 1.5.0-beta02, so keep the working one and silence its warning.
+                @Suppress("DEPRECATION")
                 Slider(
                     value = a4,
                     onValueChange = { onA4(it.roundToInt().toFloat()) },

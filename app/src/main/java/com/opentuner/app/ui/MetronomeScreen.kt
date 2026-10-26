@@ -196,6 +196,8 @@ fun MetronomeScreen(
         }
 
         // Tempo Slider
+        // The SliderState overload did not move the thumb in 1.5.0-beta02, so keep the working one and silence its warning.
+        @Suppress("DEPRECATION")
         Slider(
             value = state.bpm.toFloat(),
             onValueChange = { onBpmChange(it.roundToInt()) },
