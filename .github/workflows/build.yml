@@ -23,10 +23,23 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: 9.3.1
-      - name: Unit tests and debug APK
+      # Optional: with the four secrets below set in the repo, the release APK is signed with your own key.
+      - name: Prepare release key
+        env:
+          KEYSTORE_B64: ${{ secrets.OPENTUNER_KEYSTORE_B64 }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.jks"
+            echo "OPENTUNER_KEYSTORE=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
+          fi
+      - name: Unit tests, debug and release APKs
+        env:
+          OPENTUNER_STORE_PASSWORD: ${{ secrets.OPENTUNER_STORE_PASSWORD }}
+          OPENTUNER_KEY_ALIAS: ${{ secrets.OPENTUNER_KEY_ALIAS }}
+          OPENTUNER_KEY_PASSWORD: ${{ secrets.OPENTUNER_KEY_PASSWORD }}
         run: |
           set -o pipefail
-          gradle test assembleDebug --stacktrace 2>&1 | tee build.log
+          gradle test assembleDebug assembleRelease --stacktrace 2>&1 | tee build.log
       # Puts the compiler errors in the run's annotations so they can be read without downloading the full log.
       - name: Summarise errors
         if: failure()
@@ -37,3 +50,7 @@ jobs:
         with:
           name: OpenTuner-debug-apk
           path: app/build/outputs/apk/debug/*.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: OpenTuner-release-apk
+          path: app/build/outputs/apk/release/*.apk
