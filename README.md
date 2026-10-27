@@ -23,7 +23,7 @@ All code, drawings and sounds in this repo are original. The app is inspired by 
 - Root and type browser (major, minor, 7, maj7, m7, sus2, sus4, dim, aug) with a fretboard diagram, strum playback and a left-handed flip
 
 **Look and feel**
-- Material 3 Expressive: springy motion, morphing Material shapes, emphasized type, wallpaper colours on Android 12+
+- Material 3 Expressive: springy motion, morphing Material shapes, emphasized type, wallpaper colours (Material You)
 - An About tab on the bottom bar with the version, license, source link and tappable credits
 - A short intro animation (a tuning peg turns and the string settles) that grows into the tuner's note circle. Tap to skip. It is drawn in code, with no video or image files.
 
@@ -49,7 +49,7 @@ gradle test assembleDebug
 | Kotlin | 2.2.10 | |
 | Gradle | 9.3.1 | |
 | Material 3 | 1.5.0-beta02 | The Expressive APIs (shapes, toggle buttons, motion scheme) are only public from the 1.5 line. |
-| compileSdk / targetSdk / minSdk | 37 / 36 / 26 | Compose 1.12 needs compileSdk 37. |
+| compileSdk / targetSdk / minSdk | 37 / 36 / 31 | Compose 1.12 needs compileSdk 37. The app needs Android 12 or newer. |
 
 Material 3 1.5 is a beta, so expect the occasional API change when you update it.
 
