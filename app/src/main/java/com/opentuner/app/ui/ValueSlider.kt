@@ -2,6 +2,11 @@
 
 package com.opentuner.app.ui
 
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Slider
 import androidx.compose.material3.rememberSliderState
@@ -10,7 +15,10 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.unit.dp
 import kotlin.math.abs
 
 /**
@@ -45,5 +53,25 @@ fun ValueSlider(
         snapshotFlow { state.value }.collect { if (abs(it - latestValue) > 0.001f) latestOnChange(it) }
     }
 
-    Slider(state = state, onValueChange = { state.value = it }, modifier = modifier)
+    // The bare slider is only about 24dp tall, so a finger that lands or drifts a little off it misses, or turns into a
+    // scroll of the Settings sheet. A taller touch area fixes the first; the box eats the touches the slider has already
+    // handled so the sheet and its scroll column don't also react to them (the child sees each event first).
+    Box(
+        modifier = modifier.pointerInput(Unit) {
+            awaitEachGesture {
+                awaitFirstDown(requireUnconsumed = false).consume()
+                do {
+                    val event = awaitPointerEvent()
+                    event.changes.forEach { it.consume() }
+                } while (event.changes.any { it.pressed })
+            }
+        },
+        contentAlignment = Alignment.Center,
+    ) {
+        Slider(
+            state = state,
+            onValueChange = { state.value = it },
+            modifier = Modifier.fillMaxWidth().height(56.dp),
+        )
+    }
 }
