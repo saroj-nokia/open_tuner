@@ -148,7 +148,7 @@ fun ChordScreen(
 
         Spacer(Modifier.height(8.dp))
 
-        // Type Selector Chips (maj, m, 7, maj7, m7, sus2, sus4, dim, aug)
+        // Type Selector Chips (maj, m, 5, 7, maj7, m7, sus2, sus4, dim, aug, 6, m6, add9, 7sus4, dim7, m7♭5, 9)
         LazyRow(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -305,7 +305,7 @@ fun ChordFretboardCanvas(
         val fretboardHeight = h - topPad - bottomPad
 
         val stringSpacing = fretboardWidth / 5f
-        val numFretSpaces = 4
+        val numFretSpaces = 5 // the add9 shape spans five frets
         val fretSpacing = fretboardHeight / numFretSpaces.toFloat()
 
         val nutY = topPad

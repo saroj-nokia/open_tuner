@@ -8,7 +8,7 @@ import org.junit.Test
 class ChordsTest {
 
     @Test
-    fun testAll108ChordsHaveValidVoicingsAndTones() {
+    fun testAllChordsHaveValidVoicingsAndTones() {
         for (root in Chords.ROOTS) {
             val rootSemi = Chords.rootSemitone(root)
             for (type in ChordType.entries) {

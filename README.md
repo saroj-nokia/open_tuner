@@ -20,7 +20,7 @@ All code, drawings and sounds in this repo are original. The app is inspired by 
 - Clicks are generated into an audio buffer on their own thread, so the timing doesn't drift with the UI. It stops when you leave the app.
 
 **Chords**
-- Root and type browser (major, minor, 7, maj7, m7, sus2, sus4, dim, aug) with a fretboard diagram, strum playback and a left-handed flip
+- Root and type browser (major, minor, power chords, 6, m6, 7, maj7, m7, 9, add9, sus2, sus4, 7sus4, dim, dim7, m7♭5, aug: 17 types in all 12 keys) with a fretboard diagram, strum playback and a left-handed flip
 
 **Look and feel**
 - Material 3 Expressive: springy motion, morphing Material shapes, emphasized type, wallpaper colours (Material You)

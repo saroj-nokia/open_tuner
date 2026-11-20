@@ -10,13 +10,21 @@ enum class ChordType(
 ) {
     MAJOR("", "Major", listOf(0, 4, 7)),
     MINOR("m", "Minor", listOf(0, 3, 7)),
+    POWER("5", "Power chord", listOf(0, 7)),
     SEVENTH("7", "Dominant 7th", listOf(0, 4, 7, 10)),
     MAJOR_7("maj7", "Major 7th", listOf(0, 4, 7, 11)),
     MINOR_7("m7", "Minor 7th", listOf(0, 3, 7, 10)),
     SUS2("sus2", "Suspended 2nd", listOf(0, 2, 7)),
     SUS4("sus4", "Suspended 4th", listOf(0, 5, 7)),
     DIMINISHED("dim", "Diminished", listOf(0, 3, 6)),
-    AUGMENTED("aug", "Augmented", listOf(0, 4, 8));
+    AUGMENTED("aug", "Augmented", listOf(0, 4, 8)),
+    SIXTH("6", "Major 6th", listOf(0, 4, 7, 9)),
+    MINOR_6("m6", "Minor 6th", listOf(0, 3, 7, 9)),
+    ADD9("add9", "Add 9", listOf(0, 4, 7, 14)),
+    SEVENTH_SUS4("7sus4", "Dominant 7th sus4", listOf(0, 5, 7, 10)),
+    DIMINISHED_7("dim7", "Diminished 7th", listOf(0, 3, 6, 9)),
+    HALF_DIMINISHED("m7♭5", "Half-diminished", listOf(0, 3, 6, 10)),
+    NINTH("9", "Dominant 9th", listOf(0, 4, 7, 10, 14));
 
     val label: String get() = if (symbol.isEmpty()) "maj" else symbol
 }
@@ -152,12 +160,33 @@ object Chords {
         // A-shape (string 5 root): fret = (rootSemi - 9 + 12) % 12
         val fret5 = (rootSemi - 9 + 12) % 12
 
+        // Power chords need no barre, so they may sit on open strings and use whichever root string is lower.
+        if (type == ChordType.POWER) return if (fret6 <= fret5) generateEShape(root, type, fret6) else generateAShape(root, type, fret5)
+
         // Prefer whichever position sits lowest on the neck (between frets 1 and 7)
         return if (fret6 in 1..6 && (fret5 !in 1..6 || fret6 <= fret5)) {
             generateEShape(root, type, fret6)
         } else {
             generateAShape(root, type, fret5)
         }
+    }
+
+    /** Builds the voicing; the barre is only drawn where a finger really lies across 2+ strings with nothing lower in between. */
+    private fun finish(root: String, type: ChordType, frets: List<Int>, fingers: List<Int>, f: Int): ChordVoicing {
+        val atF = frets.indices.filter { frets[it] == f }
+        val from = atF.firstOrNull()
+        val to = atF.lastOrNull()
+        val barre = f >= 1 && atF.size >= 2 && from != null && to != null && frets.slice(from..to).all { it >= f }
+        return ChordVoicing(
+            root = root,
+            type = type,
+            frets = frets,
+            fingers = fingers,
+            baseFret = frets.filter { it > 0 }.minOrNull() ?: 1,
+            barreFret = if (barre) f else null,
+            barreFrom = from ?: 0,
+            barreTo = to ?: 5,
+        )
     }
 
     /**
@@ -174,17 +203,16 @@ object Chords {
             ChordType.SUS4 -> listOf(f, f + 2, f + 2, f + 2, f, f) to listOf(1, 3, 4, 2, 1, 1)
             ChordType.DIMINISHED -> listOf(f, f + 1, f + 2, f, -1, -1) to listOf(1, 2, 3, 1, -1, -1)
             ChordType.AUGMENTED -> listOf(f, -1, f + 2, f + 1, f + 1, -1) to listOf(1, -1, 3, 2, 2, -1)
+            ChordType.POWER -> listOf(f, f + 2, f + 2, -1, -1, -1) to listOf(1, 3, 4, -1, -1, -1)
+            ChordType.SIXTH -> listOf(f, f + 2, f + 2, f + 1, f + 2, f) to listOf(1, 3, 4, 2, 4, 1)
+            ChordType.MINOR_6 -> listOf(f, f + 2, f + 2, f, f + 2, f) to listOf(1, 3, 4, 1, 4, 1)
+            ChordType.ADD9 -> listOf(f, f + 2, f + 4, f + 1, f, f) to listOf(1, 3, 4, 2, 1, 1)
+            ChordType.SEVENTH_SUS4 -> listOf(f, f + 2, f, f + 2, f, f) to listOf(1, 3, 1, 4, 1, 1)
+            ChordType.DIMINISHED_7 -> listOf(f, -1, f - 1, f, f - 1, -1) to listOf(3, -1, 1, 4, 2, -1)
+            ChordType.HALF_DIMINISHED -> listOf(f, -1, f, f, f - 1, -1) to listOf(2, -1, 3, 4, 1, -1)
+            ChordType.NINTH -> listOf(f, f + 2, f, f + 1, f, f + 2) to listOf(1, 3, 1, 2, 1, 4)
         }
-        return ChordVoicing(
-            root = root,
-            type = type,
-            frets = frets,
-            fingers = fingers,
-            baseFret = f,
-            barreFret = f,
-            barreFrom = 0,
-            barreTo = 5,
-        )
+        return finish(root, type, frets, fingers, f)
     }
 
     /**
@@ -201,16 +229,15 @@ object Chords {
             ChordType.SUS4 -> listOf(-1, f, f + 2, f + 2, f + 3, f) to listOf(-1, 1, 2, 3, 4, 1)
             ChordType.DIMINISHED -> listOf(-1, f, f + 1, f + 2, f + 1, -1) to listOf(-1, 1, 2, 4, 3, -1)
             ChordType.AUGMENTED -> listOf(-1, f, f + 3, f + 2, f + 2, -1) to listOf(-1, 1, 4, 2, 3, -1)
+            ChordType.POWER -> listOf(-1, f, f + 2, f + 2, -1, -1) to listOf(-1, 1, 3, 4, -1, -1)
+            ChordType.SIXTH -> listOf(-1, f, f + 2, f + 2, f + 2, f + 2) to listOf(-1, 1, 3, 3, 3, 3)
+            ChordType.MINOR_6 -> listOf(-1, f, f + 2, f + 2, f + 1, f + 2) to listOf(-1, 1, 3, 4, 2, 4)
+            ChordType.ADD9 -> listOf(-1, f, f + 2, f + 4, f + 2, f) to listOf(-1, 1, 2, 4, 3, 1)
+            ChordType.SEVENTH_SUS4 -> listOf(-1, f, f + 2, f, f + 3, f) to listOf(-1, 1, 3, 1, 4, 1)
+            ChordType.DIMINISHED_7 -> listOf(-1, f, f + 1, f - 1, f + 1, f - 1) to listOf(-1, 2, 3, 1, 4, 1)
+            ChordType.HALF_DIMINISHED -> listOf(-1, f, f + 1, f, f + 1, -1) to listOf(-1, 1, 3, 1, 4, -1)
+            ChordType.NINTH -> listOf(-1, f, f - 1, f, f, f) to listOf(-1, 2, 1, 3, 3, 3)
         }
-        return ChordVoicing(
-            root = root,
-            type = type,
-            frets = frets,
-            fingers = fingers,
-            baseFret = f,
-            barreFret = f,
-            barreFrom = 1,
-            barreTo = 5,
-        )
+        return finish(root, type, frets, fingers, f)
     }
 }
