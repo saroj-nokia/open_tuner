@@ -57,13 +57,4 @@ class AudioSignalMathTest {
         // Halfway point: -30 dB maps to 0.5
         assertEquals(0.5f, AudioSignalMath.normalizeDb(-30f, meterFloorDb = -60f, meterCeilDb = 0f), 0.001f)
     }
-
-    @Test
-    fun isAboveGateThreshold() {
-        // -30 dB is above -44 dB gate
-        assertTrue(AudioSignalMath.isAboveGate(0.0316f, gateThresholdDb = -44f))
-
-        // -50 dB is below -44 dB gate
-        assertFalse(AudioSignalMath.isAboveGate(0.00316f, gateThresholdDb = -44f))
-    }
 }

@@ -1,6 +1,5 @@
 package com.opentuner.app.audio
 
-import android.content.Context
 import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioTrack
@@ -85,21 +84,6 @@ class KarplusStrongSynth(
         }
 
         return output
-    }
-}
-
-/**
- * Future-proof audio source that can load recorded audio files from res/raw,
- * adjusting playback pitch to match target frequency, falling back to Karplus-Strong.
- */
-class SampledStringAudioSource(
-    private val context: Context? = null,
-    private val fallback: StringAudioSource = KarplusStrongSynth(),
-) : StringAudioSource {
-    override fun getAudio(freq: Double, seconds: Double, sampleRate: Int): ShortArray {
-        // When real audio samples are dropped into res/raw, they can be unpacked and pitch-adjusted here.
-        // Gracefully defaults to KarplusStrongSynth.
-        return fallback.getAudio(freq, seconds, sampleRate)
     }
 }
 

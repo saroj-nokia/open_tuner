@@ -55,12 +55,4 @@ object AudioSignalMath {
         val clamped = max(meterFloorDb, min(meterCeilDb, db))
         return (clamped - meterFloorDb) / (meterCeilDb - meterFloorDb)
     }
-
-    /**
-     * Determines whether the given signal RMS exceeds the noise gate threshold.
-     */
-    fun isAboveGate(rms: Float, gateThresholdDb: Float): Boolean {
-        val db = rmsToDb(rms)
-        return db >= gateThresholdDb
-    }
 }

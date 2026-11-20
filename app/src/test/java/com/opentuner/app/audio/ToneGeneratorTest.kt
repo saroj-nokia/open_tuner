@@ -78,10 +78,6 @@ class ToneGeneratorTest {
             val data = ToneGenerator.audioSource.getAudio(440.0, 1.0, sampleRate)
             assertEquals(100, data.size)
             assertEquals(42.toShort(), data[0])
-
-            val sampledSource = SampledStringAudioSource(fallback = dummySource)
-            val sampledData = sampledSource.getAudio(440.0, 1.0, sampleRate)
-            assertEquals(100, sampledData.size)
         } finally {
             ToneGenerator.audioSource = original
         }
